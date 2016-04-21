@@ -76,9 +76,10 @@ static int cemplate_parse(const char *in)
 				{
 					block = 'N';
 					iter += sizeof(end) - 2;
-					fprintf(fout, "\");\n#line %d \"%s\"", normal_line, in);
+					fprintf(fout, "\\n\");\n#line %d \"%s\"", normal_line, in);
 					continue;
 				}
+				if(*iter == '"') fputc('\\', fout);
 				fputc(*iter, fout);
 			}
 		}
@@ -183,7 +184,9 @@ int cemplate_generate(const char *in, const char *out, void *data)
 	}
 
 	FILE *fd = out ? fopen(out, "w") : stdout;
-	return temp->generator(fd, data);
+	int result = temp->generator(fd, data);
+	fclose(fd);
+	return result;
 }
 
 #ifdef UNIT_TEST

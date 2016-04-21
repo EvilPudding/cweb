@@ -8,6 +8,7 @@
 
 int process_c(char *file, char *out, void *userptr)
 {
+	printf("'%s' '%s'\n", file, out);
 	return cemplate_generate(file, out, userptr);
 }
 
@@ -26,7 +27,7 @@ typedef struct
 const FileType g_types[] =
 {
 	{"", "text/plain", NULL},
-	{"c", "text/c", process_c},
+	{"c", "text/html", process_c},
 	{"css", "text/css", NULL},
 	{"gif", "image/gif", NULL},
 	{"html", "text/html", NULL},
