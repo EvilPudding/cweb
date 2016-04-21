@@ -4,10 +4,11 @@
 #include <string.h>
 #include <syslog.h>
 #include <libwebsockets.h>
+#include "cemplate.h"
 
-char *process_c(char *file, void *userptr)
+int process_c(char *file, char *out, void *userptr)
 {
-	return file;
+	return cemplate_generate(file, out, userptr);
 }
 
 typedef struct
@@ -19,7 +20,7 @@ typedef struct
 {
 	char ext[5];
 	char mime[32];
-	char *(*preprocessor)(char*, void*);
+	int (*preprocessor)(char*, char*, void*);
 } FileType;
 
 const FileType g_types[] =
@@ -130,7 +131,6 @@ static int callback_http(
 					if (cwd != NULL)
 					{
 						char resource_path[256] = "";
-						char final_resource_path[256] = "";
 						sprintf(resource_path, "%s%s", cwd, requested_uri);
 
 						char *extension = strrchr(requested_uri, '.');
@@ -144,8 +144,18 @@ static int callback_http(
 						{
 							printf("could not find ft=%s\n", extension);
 						}
+						if(ft->preprocessor)
+						{
+							ft->preprocessor(requested_uri + 1, "final.html", NULL);
 
-						lws_serve_http_file(wsi, resource_path, ft->mime, NULL, 0);
+							sprintf(resource_path, "%s/final.html", cwd);
+
+							lws_serve_http_file(wsi, "final.html", ft->mime, NULL, 0);
+						}
+						else
+						{
+							lws_serve_http_file(wsi, resource_path, ft->mime, NULL, 0);
+						}
 					}
 				}
 				return -1;

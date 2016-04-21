@@ -43,7 +43,7 @@ static int cemplate_parse(const char *in)
 	if(!fin) return 0;
 	FILE *fout = fopen(out, "w");
 	if(!fout) return 0;
-	fprintf(fout, "#ifndef CEMPLATE_GEN\n#define CEMPLATE_GEN\n");
+	fprintf(fout, "#ifndef CEMPLATE_GEN\n#define CEMPLATE_GEN\n#endif\n");
 
 	char *line = NULL;
 	size_t len = 0;
@@ -186,6 +186,7 @@ int cemplate_generate(const char *in, const char *out, void *data)
 	return temp->generator(fd, data);
 }
 
+#ifdef UNIT_TEST
 int main(int argc, char **argv)
 {
 	char *out;
@@ -198,3 +199,4 @@ int main(int argc, char **argv)
 
 	return cemplate_generate(argv[1], out, NULL);
 }
+#endif
