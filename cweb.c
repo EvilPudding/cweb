@@ -136,12 +136,13 @@ static int cweb_websocket_protocol(
 
 	case LWS_CALLBACK_ESTABLISHED:
 		socket->server = server;
-		cb = cweb_socket_get_event(socket, "connection");
+		cb = cweb_socket_get_event(socket, "connected");
 		if(cb)
 		{
 			cb(socket, server, NULL);
 		}
 		break;
+
 	case LWS_CALLBACK_RECEIVE:
 		json = json_loads(in, 0, &error);
 		event = json_object_get(json, "event");
@@ -155,8 +156,16 @@ static int cweb_websocket_protocol(
 		json_decref(event);
 		json_decref(data);
 		json_decref(json);
-
 		break;
+
+	case LWS_CALLBACK_CLOSED:
+		cb = cweb_socket_get_event(socket, "disconnected");
+		if(cb)
+		{
+			cb(socket, server, NULL);
+		}
+		break;
+
 	default:
 		printf("REASON: %d\n", reason);
 		break;
@@ -351,7 +360,7 @@ void cweb_sockets_on(cweb_t *self, const char *event, event_callback_t cb)
 	strcpy(ev->name, event);
 	self->events_num = l;
 
-	if(!strcmp(event, "connection"))
+	if(!strcmp(event, "connected"))
 	{
 		cweb_add_protocol(self, "cwebsockets", cweb_websocket_protocol, sizeof(cweb_socket_t));
 	}
@@ -391,7 +400,7 @@ int main(int argc, char **argv)
 	cweb_t *server = cweb_new(80);
 	cweb_set_public(server, "public");
 
-	cweb_sockets_on(server, "connection", sockets_connected);
+	cweb_sockets_on(server, "connected", sockets_connected);
 
 	cweb_run(server);
 }
