@@ -38,7 +38,6 @@ static int cemplate_parse(const char *in)
 	strcpy(out_name, in);
 	for(char *iter = out_name; *iter; iter++) if(*iter == '/') *iter = '_';
 	sprintf(out, "templates/tmp/%s", out_name);
-	printf("%s %s\n", in, out);
 	const char start[] = "/*%";
 	const char end[] = "%*/";
 
@@ -46,6 +45,7 @@ static int cemplate_parse(const char *in)
 	if(!fin)
 	{
 		printf("File '%s' does not exist.\n", in);
+		return 0;
 	}
 	FILE *fout = fopen(out, "w");
 	if(!fout) return 0;

@@ -12,6 +12,7 @@ function RFI(ip, port, remotes, local)
 	this.ip = 'ws://' + this.ip + ':' + this.port;
 	this.protocol = 'kek-protocol';
 	this.websocket = new WebSocket(this.ip, this.protocol);
+	var rfi = this;
 	if(ip == null)
 	{
 		this.ip 
@@ -41,7 +42,7 @@ function RFI(ip, port, remotes, local)
 
 	$('button').click(function(e) {
 		e.preventDefault();
-		websocket.send($('input').val());
+		rfi.websocket.send($('input').val());
 		$('input').val('');
 	});
 };

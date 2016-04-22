@@ -44,10 +44,16 @@ const FileType g_types[] =
 	{0}
 };
 
-static const FileType *get_filetype(char *ext, size_t len)
+static const FileType *get_filetype(char *ext)
 {
     int imin = 0;
     int imax = sizeof(g_types) / sizeof(FileType) - 2;
+
+	if(!ext) return &g_types[0];
+
+	size_t len = strlen(ext);
+
+	if(!len) return &g_types[0];
 
     /*Binary search.*/
     while (imax >= imin) {
@@ -157,12 +163,13 @@ static int callback_http(
 						sprintf(resource_path, "%s%s", server->public, requested_uri);
 
 						char *extension = strrchr(requested_uri, '.');
-						if(extension[0] != '\0')
+
+						if(extension && extension[0] != '\0')
 						{
 							extension++;
 						}
 
-						const FileType *ft = get_filetype(extension, strlen(extension));
+						const FileType *ft = get_filetype(extension);
 						if(!ft)
 						{
 							printf("could not find ft=%s\n", extension);
@@ -171,9 +178,15 @@ static int callback_http(
 						{
 							char *processed = strdup("templates/tmp/generated.XXXXXX");
 							mkstemp(processed);
-							ft->preprocessor(resource_path, processed, user);
 
-							lws_serve_http_file(wsi, processed, ft->mime, NULL, 0);
+							if(ft->preprocessor(resource_path, processed, user))
+							{
+								lws_serve_http_file(wsi, processed, ft->mime, NULL, 0);
+							}
+							else
+							{
+								lws_serve_http_file(wsi, "missing", ft->mime, NULL, 0);
+							}
 							free(processed);
 						}
 						else
