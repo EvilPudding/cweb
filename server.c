@@ -14,7 +14,12 @@ int process_c(char *file, char *out, void *userptr)
 
 typedef struct
 {
+	char *public;
+} Server;
 
+typedef struct
+{
+	int count;
 } User;
 
 typedef struct
@@ -65,7 +70,6 @@ static int kek_protocol(
 		enum lws_callback_reasons reason,
 		void *user, void *in, size_t len)
 {
-
 	switch (reason)
 	{
 	case LWS_CALLBACK_ESTABLISHED:
@@ -101,6 +105,11 @@ static int callback_http(
 		void *in, size_t len)
 
 {
+	if(!wsi)
+	{
+		return 0;
+	}
+	Server *server = (Server*)lws_context_user(lws_get_context(wsi));
 	static char cwd[1024] = "";
 	if(cwd[0] == '\0')
 	{
@@ -119,9 +128,22 @@ static int callback_http(
 
 				if (strcmp(requested_uri, "/") == 0)
 				{
-					void *universal_response = "Hello, World!";
-					lws_write(wsi, universal_response,
-							strlen(universal_response), LWS_WRITE_HTTP);
+					printf("sending global response\n");
+					size_t response_len = LWS_SEND_BUFFER_PRE_PADDING + 1000 +
+							LWS_SEND_BUFFER_POST_PADDING;
+					unsigned char *buf = (unsigned char*) malloc(response_len);
+					/* void *universal_response = "Hello, World!"; */
+
+					unsigned char *p = buf + LWS_SEND_BUFFER_PRE_PADDING;
+					unsigned char *end = p + 1000 - LWS_SEND_BUFFER_PRE_PADDING;
+
+					lws_add_http_header_status(wsi, 301, &p, end);
+					lws_add_http_header_by_token(wsi,
+							WSI_TOKEN_HTTP_LOCATION, (unsigned char *)"/index.c", 7, &p, end);
+					lws_finalize_http_header(wsi, &p, end);
+
+					lws_write(wsi, buf + LWS_SEND_BUFFER_PRE_PADDING, 1000, LWS_WRITE_HTTP_HEADERS);
+					free(buf);
 					break;
 
 				} else
@@ -132,7 +154,7 @@ static int callback_http(
 					if (cwd != NULL)
 					{
 						char resource_path[256] = "";
-						sprintf(resource_path, "%s%s", cwd, requested_uri);
+						sprintf(resource_path, "%s/%s%s", cwd, server->public, requested_uri);
 
 						char *extension = strrchr(requested_uri, '.');
 						if(extension[0] != '\0')
@@ -147,11 +169,12 @@ static int callback_http(
 						}
 						if(ft->preprocessor)
 						{
-							ft->preprocessor(requested_uri + 1, "final.html", NULL);
+							char *processed = strdup("tmp/generated.XXXXXX");
+							mkstemp(processed);
+							ft->preprocessor(requested_uri + 1, processed, NULL);
 
-							sprintf(resource_path, "%s/final.html", cwd);
-
-							lws_serve_http_file(wsi, "final.html", ft->mime, NULL, 0);
+							lws_serve_http_file(wsi, processed, ft->mime, NULL, 0);
+							free(processed);
 						}
 						else
 						{
@@ -180,7 +203,7 @@ static struct lws_protocols protocols[] =
 	{
 		"http-only",
 		callback_http,
-		0
+		sizeof(User)
 	},
 	{
 		"kek-protocol",
@@ -209,6 +232,11 @@ int main(void)
 	info.iface = interface;
 	info.protocols = protocols;
 	info.extensions = lws_get_internal_extensions();
+
+	Server *user = malloc(sizeof(Server));
+	info.user = user;
+	user->public = strdup("public");
+
 
 	info.ssl_cert_filepath = cert_path;
 	info.ssl_private_key_filepath = key_path;

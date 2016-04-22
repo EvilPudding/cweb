@@ -1,4 +1,4 @@
-#include <cemplate.h>
+#include <stdio.h>
 
 int main(FILE *fp, void *data)
 {
