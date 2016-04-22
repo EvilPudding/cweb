@@ -145,7 +145,7 @@ static int callback_http(
 
 					lws_add_http_header_status(wsi, 301, &p, end);
 					lws_add_http_header_by_token(wsi,
-							WSI_TOKEN_HTTP_LOCATION, (unsigned char *)"/index.c", 7, &p, end);
+							WSI_TOKEN_HTTP_LOCATION, (unsigned char *)"/index.c", 8, &p, end);
 					lws_finalize_http_header(wsi, &p, end);
 
 					lws_write(wsi, buf + LWS_SEND_BUFFER_PRE_PADDING, 1000, LWS_WRITE_HTTP_HEADERS);
