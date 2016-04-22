@@ -8,4 +8,7 @@ server: cweb.c cemplate.c
 	cc cweb.c -o server cemplate.o -ldl -lwebsockets -ljansson -g3
 
 clean:
+	-rm cemplate.o
+	-rm cemplate
+	-rm -r templates
 	-rm server
