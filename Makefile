@@ -2,10 +2,10 @@
 
 all: server cemplate.o
 
-server: server.c cemplate.c
+server: cweb.c cemplate.c
 	cc -c cemplate.c -o cemplate.o
 	cc cemplate.c -o cemplate -ldl -DUNIT_TEST
-	cc server.c -o server cemplate.o -ldl -lwebsockets -g3
+	cc cweb.c -o server cemplate.o -ldl -lwebsockets -ljansson -g3
 
 clean:
 	-rm server

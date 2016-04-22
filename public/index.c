@@ -8,14 +8,25 @@ int main(FILE *fp, void *data)
 <html>
 	<head>
 		<meta charset="utf-8">
-		<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
-		<script src="scripts/rfi.js"></script>
+		<script src="scripts/cweb.js"></script>
 		<link rel="stylesheet" href="styles/default.css">
 		<script type="text/javascript">
-var rfi;
-window.onload = function() {
-	rfi = new RFI(null, null, ["print_number"]);
-	rfi.print_number(10);
+
+var cweb;
+var input;
+var button;
+window.onload = function()
+{
+	cweb = new CWeb();
+	input = document.getElementById('inp');
+	button = document.getElementById('but');
+	button.onclick = function(e)
+	{
+		e.preventDefault();
+		var value = input.value;
+		cweb.emit('message', value);
+		input.value = '';
+	}
 };
 
 		</script>
@@ -25,7 +36,7 @@ window.onload = function() {
 			<h1>WebSockets test</h1>
 			<ul>%*/
 
-	for(int i = 0; i < 10; i++)
+	for(int i = 0; i < 4; i++)
 	{
 			/*%<li>%*/
 		fprintf(fp, "List item number %d!\n", i);
@@ -34,8 +45,8 @@ window.onload = function() {
 
 			/*%</ul>
 			<form>
-				<input type="text" />
-				<button>Send</button>
+				<input id='inp' type="text" />
+				<button id='but'>Send</button>
 			</form>
 		</div>
 	</body>
