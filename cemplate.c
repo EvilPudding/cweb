@@ -34,13 +34,19 @@ static int cemplate_is_older(Cemplate *this, const char *p2)
 static int cemplate_parse(const char *in)
 {
 	char out[1000];
-	sprintf(out, "tmp/%s", in);
-
+	char out_name[128];
+	strcpy(out_name, in);
+	for(char *iter = out_name; *iter; iter++) if(*iter == '/') *iter = '_';
+	sprintf(out, "templates/tmp/%s", out_name);
+	printf("%s %s\n", in, out);
 	const char start[] = "/*%";
 	const char end[] = "%*/";
 
 	FILE *fin = fopen(in, "r");
-	if(!fin) return 0;
+	if(!fin)
+	{
+		printf("File '%s' does not exist.\n", in);
+	}
 	FILE *fout = fopen(out, "w");
 	if(!fout) return 0;
 	fprintf(fout, "#ifndef CEMPLATE_GEN\n#define CEMPLATE_GEN\n#endif\n");
@@ -104,14 +110,18 @@ static int cemplate_parse(const char *in)
 
 static inline int cemplate_create_dirs()
 {
-	return !system("mkdir -p templates tmp");
+	return !system("mkdir -p templates/tmp");
 }
 
 static int cemplate_compile_aux(const char *file)
 {
+	char out_name[128];
+	strcpy(out_name, file);
+	for(char *iter = out_name; *iter; iter++) if(*iter == '/') *iter = '_';
+
 	char command[1000];
-	char format[] = "gcc -I. -shared -o templates/%s.so -fPIC tmp/%s.c";
-	sprintf(command, format, file, file);
+	char format[] = "gcc -I. -shared -o templates/%s.so -fPIC templates/tmp/%s.c";
+	sprintf(command, format, out_name, out_name);
 	return !system(command);
 }
 
@@ -143,6 +153,7 @@ static Cemplate *get_template(const char *file)
 		return NULL;
 	}
 	*dot_index = '\0';
+	for(char *iter = name; *iter; iter++) if(*iter == '/') *iter = '_';
 
 	int i;
 	for(i = 0; i < templates_num; i++)
@@ -172,14 +183,22 @@ int cemplate_generate(const char *in, const char *out, void *data)
 	}
 	if(cemplate_is_older(temp, in))
 	{
-		printf("recompiling\n");
-		int sucess = cemplate_create_dirs() &&
-			cemplate_parse(in) &&
-			cemplate_compile_aux(temp->name) &&
-			cemplate_update_lib(temp);
-		if(!sucess)
+		printf("Template not up to date, recompiling.\n");
+		if(!cemplate_create_dirs())
 		{
-			return 0;
+			perror("Failed to create template directories.\n"); return 0;
+		}
+		if(!cemplate_parse(in))
+		{
+			perror("Failed to parse template.\n"); return 0;
+		}
+		if(!cemplate_compile_aux(temp->name))
+		{
+			perror("Failed to compile template.\n"); return 0;
+		}
+		if(!cemplate_update_lib(temp))
+		{
+			perror("Failed to open template.\n"); return 0;
 		}
 	}
 

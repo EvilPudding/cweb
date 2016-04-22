@@ -2,6 +2,7 @@
 
 int main(FILE *fp, void *data)
 {
+	printf("Generating file\n");
 /*%
 <!DOCTYPE html>
 <html>
@@ -9,8 +10,8 @@ int main(FILE *fp, void *data)
 		<meta charset="utf-8">
 		<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
 		<script src="scripts/rfi.js"></script>
+		<link rel="stylesheet" href="styles/default.css">
 		<script type="text/javascript">
-
 var rfi;
 window.onload = function() {
 	rfi = new RFI(null, null, ["print_number"]);
@@ -20,22 +21,23 @@ window.onload = function() {
 		</script>
 	</head>
 	<body>
-		<h1>WebSockets test</h1>
-		<ul>%*/
+		<div class="container">
+			<h1>WebSockets test</h1>
+			<ul>%*/
 
 	for(int i = 0; i < 10; i++)
 	{
-		/*%<li>%*/
+			/*%<li>%*/
 		fprintf(fp, "List item number %d!\n", i);
-		/*%</li>%*/
+			/*%</li>%*/
 	}
 
-		/*%</ul>
-		<form>
-			<input type="text" />
-			<button>Send</button>
-		</form>
-		<div></div>
+			/*%</ul>
+			<form>
+				<input type="text" />
+				<button>Send</button>
+			</form>
+		</div>
 	</body>
 </html> %*/
 	return 1;

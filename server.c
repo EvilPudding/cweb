@@ -154,7 +154,7 @@ static int callback_http(
 					if (cwd != NULL)
 					{
 						char resource_path[256] = "";
-						sprintf(resource_path, "%s/%s%s", cwd, server->public, requested_uri);
+						sprintf(resource_path, "%s%s", server->public, requested_uri);
 
 						char *extension = strrchr(requested_uri, '.');
 						if(extension[0] != '\0')
@@ -169,9 +169,9 @@ static int callback_http(
 						}
 						if(ft->preprocessor)
 						{
-							char *processed = strdup("tmp/generated.XXXXXX");
+							char *processed = strdup("templates/tmp/generated.XXXXXX");
 							mkstemp(processed);
-							ft->preprocessor(requested_uri + 1, processed, NULL);
+							ft->preprocessor(resource_path, processed, user);
 
 							lws_serve_http_file(wsi, processed, ft->mime, NULL, 0);
 							free(processed);
@@ -227,15 +227,16 @@ int main(void)
 	int opts = 0;
 
 	struct lws_context_creation_info info;
-	memset(&info, 0, sizeof info);
+	memset(&info, 0, sizeof(info));
 	info.port = port;
 	info.iface = interface;
 	info.protocols = protocols;
 	info.extensions = lws_get_internal_extensions();
 
-	Server *user = malloc(sizeof(Server));
-	info.user = user;
-	user->public = strdup("public");
+	Server *server = malloc(sizeof(Server));
+	info.user = server;
+
+	server->public = strdup("public");
 
 
 	info.ssl_cert_filepath = cert_path;
