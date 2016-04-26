@@ -45,13 +45,12 @@ typedef struct
 {
 	char ext[5];
 	char mime[32];
-	int (*preprocessor)(char*, char*, void*);
+	size_t (*preprocessor)(char*, char**, void*);
 } file_type_t;
 
-int process_c(char *file, char *out, void *userptr)
+size_t process_c(char *file, char **out, void *userptr)
 {
-	printf("'%s' '%s'\n", file, out);
-	return cemplate_generate(file, out, userptr);
+	return cemplate_generate_to_string(file, out, userptr);
 }
 
 static const file_type_t *get_filetype(char *ext)
@@ -173,6 +172,57 @@ static int cweb_websocket_protocol(
 	return 0;
 }
 
+LWS_VISIBLE int lws_serve_http_string(struct lws *wsi,
+				    const char *string,
+				    const size_t stringlen,
+				    const char *content_type,
+				    const char *other_headers,
+				    int other_headers_len)
+{
+	size_t response_len = LWS_SEND_BUFFER_PRE_PADDING + stringlen +
+		LWS_SEND_BUFFER_POST_PADDING;
+
+	unsigned char *buffer = malloc(response_len);
+	unsigned char *response = buffer + LWS_SEND_BUFFER_PRE_PADDING;
+	unsigned char *p = response;
+	unsigned char *end = p + stringlen;
+
+	int ret = 0;
+
+	if (lws_add_http_header_status(wsi, 200, &p, end))
+		return -1;
+	if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_SERVER,
+					 (unsigned char *)"libwebsockets", 13,
+					 &p, end))
+		return -1;
+	if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_TYPE,
+					 (unsigned char *)content_type,
+					 strlen(content_type), &p, end))
+		return -1;
+	if (lws_add_http_header_content_length(wsi, stringlen, &p, end))
+		return -1;
+
+	if (other_headers) {
+		if ((end - p) < other_headers_len)
+			return -1;
+		memcpy(p, other_headers, other_headers_len);
+		p += other_headers_len;
+	}
+
+	if (lws_finalize_http_header(wsi, &p, end))
+		return -1;
+
+	strcpy(response, string);
+
+	ret = lws_write(wsi, response, stringlen, LWS_WRITE_HTTP_HEADERS);
+	/* ret = lws_write(wsi, response, stringlen, LWS_WRITE_TEXT); */
+	
+
+	free(buffer);
+
+	return ret;
+}
+
 static int cweb_http_protocol(
 		struct lws *wsi,
 		enum lws_callback_reasons reason, void *cwebuser,
@@ -210,7 +260,7 @@ static int cweb_http_protocol(
 					/* void *universal_response = "Hello, World!"; */
 
 					unsigned char *p = buf + LWS_SEND_BUFFER_PRE_PADDING;
-					unsigned char *end = p + 1000 - LWS_SEND_BUFFER_PRE_PADDING;
+					unsigned char *end = p + 1000;
 
 					lws_add_http_header_status(wsi, 301, &p, end);
 					lws_add_http_header_by_token(wsi,
@@ -245,18 +295,17 @@ static int cweb_http_protocol(
 						}
 						if(ft->preprocessor)
 						{
-							char *processed = strdup("templates/tmp/generated.XXXXXX");
-							mkstemp(processed);
-
-							if(ft->preprocessor(resource_path, processed, NULL))
-							{
-								lws_serve_http_file(wsi, processed, ft->mime, NULL, 0);
-							}
-							else
+							char *buffer = NULL;
+							int len = ft->preprocessor(resource_path, &buffer, NULL);
+							if(len == -1)
 							{
 								lws_serve_http_file(wsi, "missing", ft->mime, NULL, 0);
 							}
-							free(processed);
+							else
+							{
+								lws_serve_http_string(wsi, buffer, (size_t)len, ft->mime, NULL, 0);
+								free(buffer);
+							}
 						}
 						else
 						{

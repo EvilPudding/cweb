@@ -120,7 +120,7 @@ static int cemplate_compile_aux(const char *file)
 	for(char *iter = out_name; *iter; iter++) if(*iter == '/') *iter = '_';
 
 	char command[1000];
-	char format[] = "gcc -I. -shared -o templates/%s.so -fPIC templates/tmp/%s.c";
+	char format[] = "gcc -I. -O3 -shared -o templates/%s.so -fPIC templates/tmp/%s.c";
 	sprintf(command, format, out_name, out_name);
 	return !system(command);
 }
@@ -174,7 +174,7 @@ static Cemplate *get_template(const char *file)
 	return temp;
 }
 
-int cemplate_generate(const char *in, const char *out, void *data)
+int cemplate_generate_to_stream(const char *in, FILE *stream, void *data)
 {
 	Cemplate *temp = get_template(in);
 	if(!temp)
@@ -202,8 +202,29 @@ int cemplate_generate(const char *in, const char *out, void *data)
 		}
 	}
 
-	FILE *fd = out ? fopen(out, "w") : stdout;
-	int result = temp->generator(fd, data);
+	return temp->generator(stream, data);
+}
+
+int cemplate_generate_to_string(const char *in, char **string, void *data)
+{
+	size_t size = 0;
+	FILE *stream = open_memstream(string, &size);
+	int result = cemplate_generate_to_stream(in, stream, data);
+	fclose(stream);
+
+	if(result == -1)
+	{
+		free(*string);
+		*string = NULL;
+		return -1;
+	}
+	return (int)size;
+}
+
+int cemplate_generate_to_file(const char *in, const char *file_out, void *data)
+{
+	FILE *fd = file_out ? fopen(file_out, "w") : stdout;
+	int result = cemplate_generate_to_stream(in, fd, data);
 	fclose(fd);
 	return result;
 }
@@ -219,6 +240,6 @@ int main(int argc, char **argv)
 	}
 	out = argc == 3 ? argv[2] : NULL;
 
-	return cemplate_generate(argv[1], out, NULL);
+	return cemplate_generate_to_file(argv[1], out, NULL);
 }
 #endif
