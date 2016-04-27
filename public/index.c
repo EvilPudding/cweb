@@ -15,11 +15,13 @@ int main(FILE *fp, void *data)
 var cweb;
 var input;
 var button;
+var people = [];
 window.onload = function()
 {
 	cweb = new CWeb();
 	input = document.getElementById('inp');
 	button = document.getElementById('but');
+	online = document.getElementById('online');
 	button.onclick = function(e)
 	{
 		e.preventDefault();
@@ -27,23 +29,47 @@ window.onload = function()
 		cweb.emit('message', value);
 		input.value = '';
 	}
+
+	cweb.on('connected', function()
+	{
+		cweb.on('left', function(data){
+			var person;
+			var i;
+			for(i = 0; i < people.length; i++)
+			{
+				if(people[i].name == data.name)
+				{
+					person = people[i];
+					break;
+				}
+			}
+			if(person == null) return;
+
+			online.removeChild(person.div);
+			people.splice(i, 1);
+
+		});
+		cweb.on('joined', function(data){
+			var person = {};
+			person.div = document.createElement('div');
+			person.div.className = 'person';
+			person.div.innerHTML = data.name;
+			person.name = data.name;
+
+			online.appendChild(person.div);
+			people.push(person);
+		});
+	});
+
 };
 
 		</script>
 	</head>
 	<body>
+		<div id="online" style="position:fixed;right:0;width:100px;"></div>
 		<div class="container">
-			<h1>WebSockets test</h1>
-			<ul>%*/
+			<h1>CWeb</h1>
 
-	for(int i = 0; i < 4; i++)
-	{
-			/*%<li>%*/
-		fprintf(fp, "List item number %d!\n", i);
-			/*%</li>%*/
-	}
-
-			/*%</ul>
 			<form>
 				<input id='inp' type="text" />
 				<button id='but'>Send</button>

@@ -32,14 +32,14 @@ function CWeb(ip, port)
 
 	this.websocket.onmessage = function(message) {
 		console.log(message);
-		// var data = JSON.parse(message);
-		// this.called(data.event, data.data);
+		var data = JSON.parse(message.data);
+		this.cweb.called(data.event, data.data);
 	};
 };
 
 CWeb.prototype.on = function(name, callback)
 {
-	this.events[name] = data;
+	this.events[name] = callback;
 };
 
 CWeb.prototype.called = function(name, data)
