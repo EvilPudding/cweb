@@ -16,12 +16,15 @@ var cweb;
 var input;
 var button;
 var people = [];
+var join_sound;
 window.onload = function()
 {
 	cweb = new CWeb();
 	input = document.getElementById('inp');
 	button = document.getElementById('but');
 	online = document.getElementById('online');
+
+	join_sound = new Audio('sounds/pop.wav');
 	button.onclick = function(e)
 	{
 		e.preventDefault();
@@ -50,6 +53,7 @@ window.onload = function()
 
 		});
 		cweb.on('joined', function(data){
+			join_sound.play();
 			var person = {};
 			person.div = document.createElement('div');
 			person.div.className = 'person';

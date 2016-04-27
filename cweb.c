@@ -73,7 +73,9 @@ static const file_type_t *get_filetype(char *ext)
 		{"jpeg", "image/jpg", NULL},
 		{"jpg", "image/jpg", NULL},
 		{"js", "application/javascript", NULL},
+		{"mp3", "audio/mpeg", NULL},
 		{"png", "image/png", NULL},
+		{"wav", "audio/wav", NULL},
 		{0}
 	}; /* types must be sorted by ext */
 
@@ -167,7 +169,7 @@ void cweb_socket_emit(cweb_socket_t *self,
 	free(message);
 }
 
-static cweb_room_t *cweb_get_room(cweb_t *self, const char *room)
+cweb_room_t *cweb_get_room(cweb_t *self, const char *room)
 {
 	int i;
 	for(i = 0; i < self->rooms_num; i++)
@@ -178,6 +180,11 @@ static cweb_room_t *cweb_get_room(cweb_t *self, const char *room)
 		}
 	}
 	return NULL;
+}
+
+cweb_room_t *cweb_socket_get_room(cweb_socket_t *self, const char *room)
+{
+	return cweb_get_room(cweb_socket_get_server(self), room);
 }
 
 void cweb_to_room_emit(cweb_t *self, const char *room_name,
@@ -619,6 +626,22 @@ void sockets_connected(cweb_socket_t *socket, const json_t *data)
 
 	client->name = strdup(name);
 	cweb_socket_set_user_ptr(socket, client);
+
+	cweb_room_t *room = cweb_socket_get_room(socket, "main_room");
+
+	for(int i = 0; i < room->sockets_num; i++)
+	{
+		if(room->sockets[i] && room->sockets[i] != socket)
+		{
+			Client *other_client = cweb_socket_get_user_ptr(room->sockets[i]);
+			json_t *other_info = json_object();
+			json_t *other_name = json_string(other_client->name);
+			json_object_set(other_info, "name", other_name);
+			cweb_socket_emit(socket, "joined", other_info);
+			json_decref(other_name);
+			json_decref(other_info);
+		}
+	}
 }
 
 void sockets_disconnected(cweb_socket_t *socket, const json_t *data)
