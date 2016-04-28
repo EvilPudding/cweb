@@ -2,7 +2,6 @@
 
 int main(FILE *fp, void *data)
 {
-	printf("Generating file\n");
 /*%
 <!DOCTYPE html>
 <html>

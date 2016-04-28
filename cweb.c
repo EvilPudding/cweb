@@ -15,13 +15,6 @@ typedef struct
 	event_callback_t cb;
 } cweb_event_t;
 
-typedef struct
-{
-	char name[32];
-	cweb_socket_t **sockets;
-	size_t sockets_num;
-} cweb_room_t;
-
 typedef struct cweb_t
 {
 	char public[256];
@@ -105,6 +98,42 @@ static const file_type_t *get_filetype(char *ext)
 	return 0;
 }
 
+static void dump_handshake_info(struct lws_tokens *lwst)
+{
+	int n;
+	static const char *token_names[] = {
+		/*[WSI_TOKEN_GET_URI]		=*/ "GET URI",
+		/*[WSI_TOKEN_HOST]		=*/ "Host",
+		/*[WSI_TOKEN_CONNECTION]	=*/ "Connection",
+		/*[WSI_TOKEN_KEY1]		=*/ "key 1",
+		/*[WSI_TOKEN_KEY2]		=*/ "key 2",
+		/*[WSI_TOKEN_PROTOCOL]		=*/ "Protocol",
+		/*[WSI_TOKEN_UPGRADE]		=*/ "Upgrade",
+		/*[WSI_TOKEN_ORIGIN]		=*/ "Origin",
+		/*[WSI_TOKEN_DRAFT]		=*/ "Draft",
+		/*[WSI_TOKEN_CHALLENGE]		=*/ "Challenge",
+
+		/* new for 04 */
+		/*[WSI_TOKEN_KEY]		=*/ "Key",
+		/*[WSI_TOKEN_VERSION]		=*/ "Version",
+		/*[WSI_TOKEN_SWORIGIN]		=*/ "Sworigin",
+
+		/* new for 05 */
+		/*[WSI_TOKEN_EXTENSIONS]	=*/ "Extensions",
+
+		/* client receives these */
+		/*[WSI_TOKEN_ACCEPT]		=*/ "Accept",
+		/*[WSI_TOKEN_NONCE]		=*/ "Nonce",
+		/*[WSI_TOKEN_HTTP]		=*/ "Http",
+	};
+	
+	for (n = 0; n < WSI_TOKEN_COUNT; n++) {
+		if (lwst[n].token == NULL)
+			continue;
+
+		fprintf(stderr, "    %s = %s\n", token_names[n], lwst[n].token);
+	}
+}
 const static event_callback_t cweb_socket_get_event(const cweb_socket_t *self,
 		const char *name)
 {
@@ -161,8 +190,7 @@ static char *generate_emit_message(const char *emit_name, json_t *data)
 	return message;
 }
 
-void cweb_socket_emit(cweb_socket_t *self,
-		const char *event, json_t *data)
+void cweb_socket_emit(cweb_socket_t *self, const char *event, json_t *data)
 {
 	char *message = generate_emit_message(event, data);
 	cweb_socket_send(self, message, strlen(message));
@@ -187,24 +215,30 @@ cweb_room_t *cweb_socket_get_room(cweb_socket_t *self, const char *room)
 	return cweb_get_room(cweb_socket_get_server(self), room);
 }
 
-void cweb_to_room_emit(cweb_t *self, const char *room_name,
-		const char *event, json_t *data, cweb_socket_t *except)
+void cweb_to_room_send(cweb_t *self, const char *room_name,
+		const char *message, size_t len, cweb_socket_t *except)
 {
 	int i;
 	cweb_room_t *room = cweb_get_room(self, room_name);
 	if(!room) return;
 
-	char *message = generate_emit_message(event, data);
-	size_t len = strlen(message);
-
 	for(i = 0; i < room->sockets_num; i++)
 	{
 		if(room->sockets[i] && room->sockets[i]->wsi && room->sockets[i] != except)
 		{
-			printf("sending: %s\n", message);
 			cweb_socket_send(room->sockets[i], message, len);
 		}
 	}
+}
+
+void cweb_to_room_emit(cweb_t *self, const char *room_name,
+		const char *event, json_t *data, cweb_socket_t *except)
+{
+	char *message = generate_emit_message(event, data);
+	size_t len = strlen(message);
+
+	cweb_to_room_send(self, room_name, message, len, except);
+
 	free(message);
 }
 
@@ -275,6 +309,12 @@ static int cweb_websocket_protocol(
 		}
 		break;
 
+	case LWS_CALLBACK_PROTOCOL_INIT:
+		printf("Protocol started successfully.\n");
+		break;
+	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+		/* you could return non-zero here and kill the connection */
+		break;
 	default:
 		printf("REASON: %d\n", reason);
 		break;
@@ -326,7 +366,6 @@ static int lws_serve_http_string(struct lws *wsi,
 
 	ret = lws_write(wsi, response, stringlen, LWS_WRITE_HTTP_HEADERS);
 	/* ret = lws_write(wsi, response, stringlen, LWS_WRITE_TEXT); */
-	
 
 	free(buffer);
 
@@ -358,11 +397,10 @@ static int cweb_http_protocol(
 		case LWS_CALLBACK_HTTP:
 			{
 				char *requested_uri = (char *) in;
-				printf("requested URI: %s\n", requested_uri);
+				/* printf("requested URI: %s\n", requested_uri); */
 
 				if (strcmp(requested_uri, "/") == 0)
 				{
-					printf("sending global response\n");
 					size_t response_len = LWS_SEND_BUFFER_PRE_PADDING + 1000 +
 							LWS_SEND_BUFFER_POST_PADDING;
 					unsigned char *buf = (unsigned char*) malloc(response_len);
@@ -506,8 +544,6 @@ int cweb_run(cweb_t *self)
 		return -1;
 	}
 
-	printf("starting server...\n");
-
 	while(1)
 	{
 		lws_service(context, 50);
@@ -592,84 +628,3 @@ void cweb_socket_join(cweb_socket_t *self, const char *room_name)
 	(*room_iter) = room;
 }
 
-/* USER SPACE */
-
-typedef struct { int number; } Server;
-typedef struct { char *name; } Client;
-
-void socket_message(cweb_socket_t *socket, const json_t *data)
-{
-	printf("Received message: '%s'\n", json_string_value(data));
-}
-
-void sockets_connected(cweb_socket_t *socket, const json_t *data)
-{
-	char name[64];
-
-	Server *server = cweb_get_user_ptr(cweb_socket_get_server(socket));
-	server->number++;
-
-	sprintf(name, "anon%d", server->number);
-
-	Client *client = malloc(sizeof(*client));
-
-	cweb_socket_on(socket, "message", socket_message);
-
-	cweb_socket_join(socket, "main_room");
-
-	json_t *info = json_object();
-	json_t *jname = json_string(name);
-	json_object_set(info, "name", jname);
-	cweb_socket_to_room_emit(socket, "main_room", "joined", info, socket);
-	json_decref(jname);
-	json_decref(info);
-
-	client->name = strdup(name);
-	cweb_socket_set_user_ptr(socket, client);
-
-	cweb_room_t *room = cweb_socket_get_room(socket, "main_room");
-
-	for(int i = 0; i < room->sockets_num; i++)
-	{
-		if(room->sockets[i] && room->sockets[i] != socket)
-		{
-			Client *other_client = cweb_socket_get_user_ptr(room->sockets[i]);
-			json_t *other_info = json_object();
-			json_t *other_name = json_string(other_client->name);
-			json_object_set(other_info, "name", other_name);
-			cweb_socket_emit(socket, "joined", other_info);
-			json_decref(other_name);
-			json_decref(other_info);
-		}
-	}
-}
-
-void sockets_disconnected(cweb_socket_t *socket, const json_t *data)
-{
-	Client *client = cweb_socket_get_user_ptr(socket);
-	json_t *info = json_object();
-	json_t *jname = json_string(client->name);
-	json_object_set(info, "name", jname);
-	cweb_socket_to_room_emit(socket, "main_room", "left", info, socket);
-	json_decref(jname);
-	json_decref(info);
-	free(client->name);
-	free(client);
-}
-
-int main(int argc, char **argv)
-{
-	int port = 80;
-	Server *server_data = malloc(sizeof(*server_data));
-
-	cweb_t *server = cweb_new(80);
-	cweb_set_user_ptr(server, server_data);
-	cweb_set_public(server, "public");
-
-	cweb_sockets_on(server, "connected", sockets_connected);
-	cweb_sockets_on(server, "disconnected", sockets_disconnected);
-
-	cweb_run(server);
-
-	free(server_data);
-}

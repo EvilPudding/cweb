@@ -44,7 +44,7 @@ static int cemplate_parse(const char *in)
 	FILE *fin = fopen(in, "r");
 	if(!fin)
 	{
-		printf("File '%s' does not exist.\n", in);
+		/* printf("File '%s' does not exist.\n", in); */
 		return 0;
 	}
 	FILE *fout = fopen(out, "w");
@@ -183,7 +183,7 @@ int cemplate_generate_to_stream(const char *in, FILE *stream, void *data)
 	}
 	if(cemplate_is_older(temp, in))
 	{
-		printf("Template not up to date, recompiling.\n");
+		/* printf("Template not up to date, recompiling.\n"); */
 		if(!cemplate_create_dirs())
 		{
 			perror("Failed to create template directories.\n"); return 0;
