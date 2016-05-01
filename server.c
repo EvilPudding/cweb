@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include "cweb.h"
+#include <cweb.h>
 
 typedef struct { int number; } Server;
 typedef struct { char *name; } Client;

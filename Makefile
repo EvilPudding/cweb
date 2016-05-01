@@ -1,14 +1,22 @@
 .PHONY:clean
 
-all: server cemplate.o
+all: server
 
-server: cweb.c cemplate.c server.c
-	cc -c cemplate.c -o cemplate.o
-	cc -c cweb.c -o cweb.o
-	cc server.c -o server cweb.o cemplate.o -ldl -lwebsockets -ljansson -g3
+server: server.c libcweb.so
+	cc server.c -o server -I. libcweb.so -ldl -lwebsockets -ljansson -g3
+
+libcweb.so: cweb.c cemplate.c
+	$(CC) -fPIC -O2 -c cemplate.c -o cemplate.o
+	$(CC) -fPIC -O2 -c cweb.c -o cweb.o
+	$(CC) -shared cweb.o cemplate.o -o libcweb.so
+
+install:
+	cp libcweb.so /usr/lib
+	cp cweb.h /usr/include
 
 clean:
 	-rm cemplate.o
+	-rm libcweb.so
 	-rm cweb.o
 	-rm -r templates
 	-rm server

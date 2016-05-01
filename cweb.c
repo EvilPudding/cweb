@@ -596,6 +596,7 @@ static cweb_room_t *cweb_add_room(cweb_t *server, const char *room_name)
  
 void cweb_socket_join(cweb_socket_t *self, const char *room_name)
 {
+	int i;
 	cweb_t *server = cweb_socket_get_server(self);
 	cweb_room_t *room = cweb_get_room(server, room_name);
 	if(!room)
@@ -604,7 +605,7 @@ void cweb_socket_join(cweb_socket_t *self, const char *room_name)
 	}
 
 	cweb_socket_t **room_free_socket = NULL;
-	for(int i = 0; i < room->sockets_num; i++)
+	for(i = 0; i < room->sockets_num; i++)
 	{
 		if(room->sockets[i] == NULL)
 		{
