@@ -181,7 +181,12 @@ static char *generate_emit_message(const char *emit_name, json_t *data)
 	json_t *info = json_object();
 	json_t *jname = json_string(emit_name);
 	json_object_set(info, "event", jname);
-	json_object_set(info, "data", data);
+
+	if(data != NULL)
+	{
+		json_object_set(info, "data", data);
+	}
+
 	char *message = json_dumps(info, 0);
 
 	json_decref(jname);
@@ -386,7 +391,10 @@ static int cweb_http_protocol(
 	static char cwd[1024] = "";
 	if(cwd[0] == '\0')
 	{
-		getcwd(cwd, sizeof(cwd));
+		if(getcwd(cwd, sizeof(cwd)))
+		{
+			fprintf(stderr, "Could not get working directory!");
+		}
 	}
 
 	switch (reason)
@@ -397,9 +405,9 @@ static int cweb_http_protocol(
 		case LWS_CALLBACK_HTTP:
 			{
 				char *requested_uri = (char *) in;
-				/* printf("requested URI: %s\n", requested_uri); */
+				printf("requested URI: %s\n", requested_uri);
 
-				if (strcmp(requested_uri, "/") == 0)
+				if(strcmp(requested_uri, "/") == 0)
 				{
 					size_t response_len = LWS_SEND_BUFFER_PRE_PADDING + 1000 +
 							LWS_SEND_BUFFER_POST_PADDING;
@@ -439,7 +447,7 @@ static int cweb_http_protocol(
 						if(ft && ft->preprocessor)
 						{
 							char *buffer = NULL;
-							int len = ft->preprocessor(resource_path, &buffer, NULL);
+							int len = ft->preprocessor(resource_path, &buffer, cwebuser);
 							if(len == -1)
 							{
 								lws_serve_http_file(wsi, "missing", ft->mime, NULL, 0);

@@ -1,6 +1,7 @@
+#include <cweb.h>
 #include <stdio.h>
 
-int main(FILE *fp, void *data)
+int main(FILE *fp, cweb_socket_t *socket)
 {
 /*%
 <!DOCTYPE html>
@@ -72,6 +73,10 @@ window.onload = function()
 		<div id="online" style="position:fixed;right:0;width:100px;"></div>
 		<div class="container">
 			<h1>CWeb</h1>
+			<h2>%*/
+	/* char *name = *(char**)cweb_socket_get_user_ptr(socket); */
+	/* fprintf(fp, "Welcome %s\n", name); */
+			/*%</h2>
 
 			<form>
 				<input id='inp' type="text" />

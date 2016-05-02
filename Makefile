@@ -3,7 +3,7 @@
 all: server
 
 server: server.c libcweb.so
-	cc server.c -o server -I. libcweb.so -ldl -lwebsockets -ljansson -g3
+	cc server.c -o server -I. ./libcweb.so -ldl -lwebsockets -ljansson -g3
 
 libcweb.so: cweb.c cemplate.c
 	$(CC) -fPIC -O2 -c cemplate.c -o cemplate.o
