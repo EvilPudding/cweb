@@ -68,6 +68,7 @@ static const file_type_t *get_filetype(char *ext)
 		{"js", "application/javascript", NULL},
 		{"mp3", "audio/mpeg", NULL},
 		{"png", "image/png", NULL},
+		{"ttf", "application/octet-stream", NULL},
 		{"wav", "audio/wav", NULL},
 		{0}
 	}; /* types must be sorted by ext */

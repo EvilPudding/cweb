@@ -85,7 +85,8 @@ static int cemplate_parse(const char *in)
 					fprintf(fout, "\\n\");\n#line %d \"%s\"", normal_line, in);
 					continue;
 				}
-				if(*iter == '"' || *iter == '%') fputc('\\', fout);
+				if(*iter == '\\' || *iter == '"') fputc('\\', fout);
+				else if(*iter == '%') fputc('%', fout);
 				fputc(*iter, fout);
 			}
 		}

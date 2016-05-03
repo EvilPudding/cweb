@@ -31,7 +31,6 @@ function CWeb(ip, port)
 	};
 
 	this.websocket.onmessage = function(message) {
-		console.log(message);
 		var data = JSON.parse(message.data);
 		this.cweb.called(data.event, data.data);
 	};
