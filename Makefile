@@ -14,6 +14,10 @@ install:
 	cp libcweb.so /usr/lib
 	cp cweb.h /usr/include
 
+uninstall:
+	-rm /usr/lib/libcweb.so
+	-rm /usr/include/cweb.h
+
 clean:
 	-rm cemplate.o
 	-rm libcweb.so
