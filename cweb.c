@@ -391,7 +391,7 @@ static int cweb_http_protocol(
 	static char cwd[1024] = "";
 	if(cwd[0] == '\0')
 	{
-		if(getcwd(cwd, sizeof(cwd)))
+		if(!getcwd(cwd, sizeof(cwd)))
 		{
 			fprintf(stderr, "Could not get working directory!");
 		}
@@ -405,7 +405,7 @@ static int cweb_http_protocol(
 		case LWS_CALLBACK_HTTP:
 			{
 				char *requested_uri = (char *) in;
-				printf("requested URI: %s\n", requested_uri);
+				/* printf("requested URI: %s\n", requested_uri); */
 
 				if(strcmp(requested_uri, "/") == 0)
 				{
