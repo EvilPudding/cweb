@@ -8,7 +8,7 @@ int main(FILE *fp, cweb_socket_t *socket)
 <html>
 	<head>
 		<meta charset="utf-8">
-		<script src="scripts/cweb.js"></script>
+		<script src="cweb/cweb.js"></script>
 		<link rel="stylesheet" href="styles/default.css">
 		<script type="text/javascript">
 
@@ -77,7 +77,6 @@ window.onload = function()
 	/* char *name = *(char**)cweb_socket_get_user_ptr(socket); */
 	/* fprintf(fp, "Welcome %s\n", name); */
 			/*%</h2>
-
 			<form>
 				<input id='inp' type="text" />
 				<button id='but'>Send</button>

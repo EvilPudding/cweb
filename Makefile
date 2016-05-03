@@ -13,10 +13,13 @@ libcweb.so: cweb.c cemplate.c
 install:
 	cp libcweb.so /usr/lib
 	cp cweb.h /usr/include
+	mkdir -p /usr/share/cweb
+	cp -r resources /usr/share/cweb
 
 uninstall:
 	-rm /usr/lib/libcweb.so
-	-rm /usr/include/cweb.h
+	 rm /usr/include/cweb.h
+	-rm -r /usr/share/cweb
 
 clean:
 	-rm cemplate.o

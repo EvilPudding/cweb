@@ -404,6 +404,7 @@ static int cweb_http_protocol(
 			break;
 		case LWS_CALLBACK_HTTP:
 			{
+				int cweb_resources = 0;
 				char *requested_uri = (char *) in;
 				/* printf("requested URI: %s\n", requested_uri); */
 
@@ -426,42 +427,47 @@ static int cweb_http_protocol(
 					free(buf);
 					break;
 
-				} else
+				}
+				else if(strncmp(requested_uri, "/cweb/", sizeof("/cweb/") - 1) == 0)
 				{
-					// try to get current working directory
-					char *resource_path;
+					requested_uri += sizeof("/cweb/") - 2;
+					cweb_resources = 1;
+				}
 
-					if (cwd != NULL)
+				char *resource_path;
+
+				if (cwd != NULL)
+				{
+					char resource_path[256] = "";
+					sprintf(resource_path, "%s%s", cweb_resources?
+							"/usr/share/cweb/resources":server->public,
+							requested_uri);
+
+					char *extension = strrchr(requested_uri, '.');
+
+					if(extension && extension[0] != '\0')
 					{
-						char resource_path[256] = "";
-						sprintf(resource_path, "%s%s", server->public, requested_uri);
+						extension++;
+					}
 
-						char *extension = strrchr(requested_uri, '.');
-
-						if(extension && extension[0] != '\0')
+					const file_type_t *ft = get_filetype(extension);
+					if(ft && ft->preprocessor)
+					{
+						char *buffer = NULL;
+						int len = ft->preprocessor(resource_path, &buffer, cwebuser);
+						if(len == -1)
 						{
-							extension++;
-						}
-
-						const file_type_t *ft = get_filetype(extension);
-						if(ft && ft->preprocessor)
-						{
-							char *buffer = NULL;
-							int len = ft->preprocessor(resource_path, &buffer, cwebuser);
-							if(len == -1)
-							{
-								lws_serve_http_file(wsi, "missing", ft->mime, NULL, 0);
-							}
-							else
-							{
-								lws_serve_http_string(wsi, buffer, (size_t)len, ft->mime, NULL, 0);
-								free(buffer);
-							}
+							lws_serve_http_file(wsi, "missing", ft->mime, NULL, 0);
 						}
 						else
 						{
-							lws_serve_http_file(wsi, resource_path, ft->mime, NULL, 0);
+							lws_serve_http_string(wsi, buffer, (size_t)len, ft->mime, NULL, 0);
+							free(buffer);
 						}
+					}
+					else
+					{
+						lws_serve_http_file(wsi, resource_path, ft->mime, NULL, 0);
 					}
 				}
 				return -1;
