@@ -103,12 +103,12 @@ static const file_type_t *get_filetype(char *ext)
 	{
 		const int i = (imin + ((imax-imin)/2));
 		int c = strncmp(ext, types[i].ext, len);
-		if (!c) c = '\0' - types[i].ext[len];
-		if (c == 0)
+		if(!c) c = '\0' - types[i].ext[len];
+		if(c == 0)
 		{
 			return types + i;
 		}
-		else if (c > 0)
+		else if(c > 0)
 		{
 			imin = i + 1;
 		}
@@ -120,42 +120,6 @@ static const file_type_t *get_filetype(char *ext)
 	return 0;
 }
 
-static void dump_handshake_info(struct lws_tokens *lwst)
-{
-	int n;
-	static const char *token_names[] = {
-		/*[WSI_TOKEN_GET_URI]		=*/ "GET URI",
-		/*[WSI_TOKEN_HOST]		=*/ "Host",
-		/*[WSI_TOKEN_CONNECTION]	=*/ "Connection",
-		/*[WSI_TOKEN_KEY1]		=*/ "key 1",
-		/*[WSI_TOKEN_KEY2]		=*/ "key 2",
-		/*[WSI_TOKEN_PROTOCOL]		=*/ "Protocol",
-		/*[WSI_TOKEN_UPGRADE]		=*/ "Upgrade",
-		/*[WSI_TOKEN_ORIGIN]		=*/ "Origin",
-		/*[WSI_TOKEN_DRAFT]		=*/ "Draft",
-		/*[WSI_TOKEN_CHALLENGE]		=*/ "Challenge",
-
-		/* new for 04 */
-		/*[WSI_TOKEN_KEY]		=*/ "Key",
-		/*[WSI_TOKEN_VERSION]		=*/ "Version",
-		/*[WSI_TOKEN_SWORIGIN]		=*/ "Sworigin",
-
-		/* new for 05 */
-		/*[WSI_TOKEN_EXTENSIONS]	=*/ "Extensions",
-
-		/* client receives these */
-		/*[WSI_TOKEN_ACCEPT]		=*/ "Accept",
-		/*[WSI_TOKEN_NONCE]		=*/ "Nonce",
-		/*[WSI_TOKEN_HTTP]		=*/ "Http",
-	};
-	
-	for (n = 0; n < WSI_TOKEN_COUNT; n++) {
-		if (lwst[n].token == NULL)
-			continue;
-
-		fprintf(stderr, "    %s = %s\n", token_names[n], lwst[n].token);
-	}
-}
 const static event_callback_t cweb_socket_get_event(const cweb_socket_t *self,
 		const char *name)
 {
@@ -389,6 +353,8 @@ static int cweb_websocket_protocol(
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
 		/* you could return non-zero here and kill the connection */
 		break;
+	case LWS_CALLBACK_PROTOCOL_DESTROY:
+		printf("Protocol being destroyed.\n");
 	default:
 		printf("REASON: %d\n", reason);
 		break;
@@ -410,54 +376,79 @@ static cweb_redirect_t *cweb_get_redirect(const cweb_t *self,
 	return NULL;
 }
 
-static int lws_serve_http_string(struct lws *wsi,
-				    const char *string,
-				    const size_t stringlen,
-				    const char *content_type,
-				    const char *other_headers,
-				    int other_headers_len)
+static int lws_serve_http_string(struct lws *wsi, unsigned char *string,
+				    size_t stringlen, const char *content_type,
+				    const char *other_headers, int other_headers_len)
 {
-	size_t response_len = LWS_SEND_BUFFER_PRE_PADDING + stringlen +
-		LWS_SEND_BUFFER_POST_PADDING;
+	unsigned char buffer[4096 + LWS_PRE];
 
-	unsigned char *buffer = malloc(response_len);
-	unsigned char *response = buffer + LWS_SEND_BUFFER_PRE_PADDING;
-	unsigned char *p = response;
-	unsigned char *end = p + stringlen;
+	unsigned char *p = buffer + LWS_PRE;
+	unsigned char *start = p;
+	unsigned char *end = p + sizeof(buffer) - LWS_PRE;
 
 	int ret = 0;
 
-	if (lws_add_http_header_status(wsi, 200, &p, end))
+	if(lws_add_http_header_status(wsi, 200, &p, end))
 		return -1;
-	if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_SERVER,
+	if(lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_SERVER,
 					 (unsigned char *)"libwebsockets", 13,
 					 &p, end))
 		return -1;
-	if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_TYPE,
+	if(lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_TYPE,
 					 (unsigned char *)content_type,
 					 strlen(content_type), &p, end))
 		return -1;
-	if (lws_add_http_header_content_length(wsi, stringlen, &p, end))
+	if(lws_add_http_header_content_length(wsi, stringlen, &p, end))
 		return -1;
 
-	if (other_headers) {
-		if ((end - p) < other_headers_len)
+	if(other_headers) {
+		if((end - p) < other_headers_len)
 			return -1;
 		memcpy(p, other_headers, other_headers_len);
 		p += other_headers_len;
 	}
 
-	if (lws_finalize_http_header(wsi, &p, end))
+	if(lws_finalize_http_header(wsi, &p, end))
 		return -1;
 
-	strcpy(response, string);
+	ret = lws_write(wsi, start, p - start, LWS_WRITE_HTTP_HEADERS);
+	if(ret < 0)
+		return 1;
 
-	ret = lws_write(wsi, response, stringlen, LWS_WRITE_HTTP_HEADERS);
-	/* ret = lws_write(wsi, response, stringlen, LWS_WRITE_TEXT); */
-
-	free(buffer);
-
+	ret = lws_write(wsi, string, stringlen, LWS_WRITE_HTTP);
+	if(ret < 0)
+		return 1;
+	/* ret = lws_write(wsi, response, stringlen, LWS_WRITE_HTTP_HEADERS); */
 	return ret;
+}
+
+static void dump_handshake_info(struct lws *wsi)
+{
+	int n = 0, len;
+	char buf[256];
+	const unsigned char *c;
+
+	do
+	{
+		c = lws_token_to_string(n);
+		if(!c) {
+			n++;
+			continue;
+		}
+
+		len = lws_hdr_total_length(wsi, n);
+		if(!len || len > sizeof(buf) - 1) {
+			n++;
+			continue;
+		}
+
+		lws_hdr_copy(wsi, buf, sizeof buf, n);
+		buf[sizeof(buf) - 1] = '\0';
+
+		fprintf(stderr, "    %s = %s\n", (char *)c, buf);
+		n++;
+	}
+	while (c);
 }
 
 static int cweb_http_protocol(
@@ -487,6 +478,15 @@ static int cweb_http_protocol(
 			break;
 		case LWS_CALLBACK_HTTP:
 			{
+				{
+					/* dump_handshake_info(wsi); */
+					int n = 0;
+					char buf[256];
+					while (lws_hdr_copy_fragment(wsi, buf, sizeof(buf),
+								WSI_TOKEN_HTTP_URI_ARGS, n) > 0) {
+						lwsl_notice("URI Arg %d: %s\n", ++n, buf);
+					}
+				}
 				char *resource_path;
 				int cweb_resources = 0;
 				char *requested_uri = (char *) in;
@@ -522,7 +522,7 @@ static int cweb_http_protocol(
 					cweb_resources = 1;
 				}
 
-				if (cwd != NULL)
+				if(cwd != NULL)
 				{
 					char resource_path[256] = "";
 					sprintf(resource_path, "%s%s", cweb_resources?
@@ -543,12 +543,20 @@ static int cweb_http_protocol(
 						int len = ft->preprocessor(resource_path, &buffer, cwebuser);
 						if(len == -1)
 						{
-							lws_serve_http_file(wsi, "missing", ft->mime, NULL, 0);
+							int n = lws_serve_http_file(wsi, "missing", ft->mime, NULL, 0);
+							if(n < 0 || ((n > 0) && lws_http_transaction_completed(wsi)))
+							{
+								return -1;
+							}
 						}
 						else
 						{
-							lws_serve_http_string(wsi, buffer, (size_t)len, ft->mime, NULL, 0);
+							int n = lws_serve_http_string(wsi, buffer, (size_t)len, ft->mime, NULL, 0);
 							free(buffer);
+							if(n < 0 || ((n > 0) && lws_http_transaction_completed(wsi)))
+							{
+								return -1;
+							}
 						}
 					}
 					else
@@ -556,14 +564,19 @@ static int cweb_http_protocol(
 						lws_serve_http_file(wsi, resource_path, ft->mime, NULL, 0);
 					}
 				}
-				return -1;
-				// close connection
-				/* lws_close_and_free_session(wsi, LWS_CLOSE_STATUS_NORMAL); */
-				break;
+				goto try_to_reuse;
 			}
 		default:
 			/* printf("unhandled callback\n"); */
 			break;
+	}
+
+	return 0;
+
+try_to_reuse:
+	if(lws_http_transaction_completed(wsi))
+	{
+		return -1;
 	}
 
 	return 0;
