@@ -28,7 +28,7 @@ typedef struct cweb_t
 	void *userptr;
 	struct lws_protocols protocols[64];
 
-	cweb_event_t **events;
+	cweb_event_t *events;
 	unsigned int events_num;
 
 	cweb_redirect_t *redirects;
@@ -46,7 +46,7 @@ typedef struct cweb_socket_t
 
 	cweb_room_t *rooms[32];
 
-	cweb_event_t **events;
+	cweb_event_t *events;
 	unsigned int events_num;
 } cweb_socket_t;
 
@@ -152,16 +152,16 @@ const static event_callback_t cweb_socket_get_event(const cweb_socket_t *self,
 
 	for(i = 0; i < server->events_num; i++)
 	{
-		if(!strcmp(name, server->events[i]->name))
+		if(!strcmp(name, server->events[i].name))
 		{
-			return server->events[i]->cb;
+			return server->events[i].cb;
 		}
 	}
 	for(i = 0; i < self->events_num; i++)
 	{
-		if(!strcmp(name, self->events[i]->name))
+		if(!strcmp(name, self->events[i].name))
 		{
-			return self->events[i]->cb;
+			return self->events[i].cb;
 		}
 	}
 	return NULL;
@@ -595,14 +595,24 @@ int cweb_run(cweb_t *self)
 
 	lws_context_destroy(context);
 
+	free(self->events);
+	free(self->rooms);
+	int i;
+	for(i = 0; i < self->redirects_num; i++)
+	{
+		free(self->redirects[i].from);
+		free(self->redirects[i].to);
+	}
+	free(self->redirects);
+
 	return 0;
 }
 
 void cweb_sockets_on(cweb_t *self, const char *event, event_callback_t cb)
 {
 	unsigned int l = self->events_num + 1;
-	self->events = realloc(self->events, sizeof(*self->events) * l);
-	cweb_event_t *ev = self->events[l - 1] = malloc(sizeof(*ev));
+	self->events = realloc(self->events, (sizeof *self->events) * l);
+	cweb_event_t *ev = &self->events[l - 1];
 	ev->cb = cb;
 	strcpy(ev->name, event);
 	self->events_num = l;
@@ -616,8 +626,8 @@ void cweb_sockets_on(cweb_t *self, const char *event, event_callback_t cb)
 void cweb_socket_on(cweb_socket_t *self, const char *event, event_callback_t cb)
 {
 	unsigned int l = self->events_num + 1;
-	self->events = realloc(self->events, sizeof(*self->events) * l);
-	cweb_event_t *ev = self->events[l - 1] = malloc(sizeof(*ev));
+	self->events = realloc(self->events, (sizeof *self->events) * l);
+	cweb_event_t *ev = &self->events[l - 1];
 	ev->cb = cb;
 	strcpy(ev->name, event);
 	self->events_num = l;
@@ -626,16 +636,16 @@ void cweb_socket_on(cweb_socket_t *self, const char *event, event_callback_t cb)
 void cweb_redirect(cweb_t *self, const char *from, const char *to)
 {
 	cweb_redirect_t *redir = cweb_get_redirect(self, from);
-
 	if(redir == NULL)
 	{
+		/* printf("Redirect %s does not exist, adding (%lu)\n", from, self->redirects_num); */
 		size_t l = self->redirects_num + 1;
 		self->redirects = realloc(self->redirects, (sizeof *self->redirects) * l);
 		redir = &self->redirects[l - 1];
 		self->redirects_num = l;
 	}
-	redir->from = strdup(from);
-	redir->to = strdup(to);
+	redir->from = (unsigned char*)strdup(from);
+	redir->to = (unsigned char*)strdup(to);
 }
 
 static cweb_room_t *cweb_add_room(cweb_t *self, const char *room_name)
