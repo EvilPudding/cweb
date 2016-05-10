@@ -5,12 +5,14 @@
 typedef struct { int number; } Server;
 typedef struct { char *name; } Client;
 
-void socket_message(cweb_socket_t *socket, const json_t *data)
+void socket_message(cweb_socket_t *socket, const json_t *data,
+		int id, cweb_socket_response_t response)
 {
 	printf("Received message: '%s'\n", json_string_value(data));
 }
 
-void sockets_connected(cweb_socket_t *socket, const json_t *data)
+void sockets_connected(cweb_socket_t *socket, const json_t *data,
+		int id, cweb_socket_response_t response)
 {
 	char name[64];
 
@@ -28,7 +30,7 @@ void sockets_connected(cweb_socket_t *socket, const json_t *data)
 	json_t *info = json_object();
 	json_t *jname = json_string(name);
 	json_object_set(info, "name", jname);
-	cweb_socket_to_room_emit(socket, "main_room", "joined", info, socket);
+	cweb_socket_to_room_emit(socket, "main_room", "joined", info, NULL, socket);
 	json_decref(jname);
 	json_decref(info);
 
@@ -46,20 +48,21 @@ void sockets_connected(cweb_socket_t *socket, const json_t *data)
 			json_t *other_info = json_object();
 			json_t *other_name = json_string(other_client->name);
 			json_object_set(other_info, "name", other_name);
-			cweb_socket_emit(socket, "joined", other_info);
+			cweb_socket_emit(socket, "joined", other_info, NULL);
 			json_decref(other_name);
 			json_decref(other_info);
 		}
 	}
 }
 
-void sockets_disconnected(cweb_socket_t *socket, const json_t *data)
+void sockets_disconnected(cweb_socket_t *socket, const json_t *data,
+		int id, cweb_socket_response_t res)
 {
 	Client *client = cweb_socket_get_user_ptr(socket);
 	json_t *info = json_object();
 	json_t *jname = json_string(client->name);
 	json_object_set(info, "name", jname);
-	cweb_socket_to_room_emit(socket, "main_room", "left", info, socket);
+	cweb_socket_to_room_emit(socket, "main_room", "left", info, NULL, socket);
 	json_decref(jname);
 	json_decref(info);
 	free(client->name);

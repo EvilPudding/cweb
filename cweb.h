@@ -14,7 +14,9 @@ typedef struct cweb_room_t
 } cweb_room_t;
 /* TODO: make cweb_room_t private */
 
-typedef void(*event_callback_t)(cweb_socket_t *self, const json_t *data);
+typedef void(*cweb_socket_response_t)(cweb_socket_t *self, int id, const json_t *data);
+typedef void(*event_callback_t)(cweb_socket_t *self, const json_t *data, int id,
+		cweb_socket_response_t response);
 
 cweb_t *cweb_new(const int port);
 
@@ -44,7 +46,8 @@ cweb_t *cweb_socket_get_server(cweb_socket_t *self);
 
 void cweb_socket_send(cweb_socket_t *self, const char *message, size_t len);
 
-void cweb_socket_emit(cweb_socket_t *self, const char *event, json_t *data);
+void cweb_socket_emit(cweb_socket_t *self, const char *event, json_t *data,
+		cweb_socket_response_t response);
 
 void *cweb_socket_get_user_ptr(cweb_socket_t *self);
 void cweb_socket_set_user_ptr(cweb_socket_t *self, void *userptr);
@@ -54,7 +57,8 @@ void cweb_socket_join(cweb_socket_t *self, const char *room_name);
 cweb_room_t *cweb_socket_get_room(cweb_socket_t *self, const char *room);
 
 void cweb_socket_to_room_emit(cweb_socket_t *self, const char *room,
-		const char *event, json_t *data, cweb_socket_t *except);
+		const char *event, json_t *data, cweb_socket_response_t res,
+		cweb_socket_t *except);
 
 /* TODO:vector */
 
