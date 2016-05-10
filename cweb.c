@@ -484,7 +484,7 @@ static int cweb_http_protocol(
 	return 0;
 }
 
-static void cweb_add_protocol(cweb_t *self, const char *name, callback_function
+static void cweb_add_protocol(cweb_t *self, const char *name, void *
 		callback, size_t per_session_data_size)
 {
 	struct lws_protocols *protocol;
@@ -506,7 +506,7 @@ cweb_t *cweb_new(const int port)
 
 	self->info.iface = NULL;
 	self->info.protocols = self->protocols;
-	self->info.extensions = lws_get_internal_extensions();
+	self->info.extensions = NULL;
 
 	self->rooms = NULL;
 	self->rooms_num = 0;
