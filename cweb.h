@@ -25,6 +25,8 @@ void cweb_set_user_ptr(cweb_t *self, void *userptr);
 
 void cweb_sockets_on(cweb_t *self, const char *event, event_callback_t cb);
 
+void cweb_redirect(cweb_t *self, const char *from, const char *to);
+
 void cweb_set_public(cweb_t *self, const char *dir);
 
 cweb_room_t *cweb_get_room(cweb_t *self, const char *room);

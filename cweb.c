@@ -15,6 +15,12 @@ typedef struct
 	event_callback_t cb;
 } cweb_event_t;
 
+typedef struct
+{
+	unsigned char *from;
+	unsigned char *to;
+} cweb_redirect_t;
+
 typedef struct cweb_t
 {
 	char public[256];
@@ -24,6 +30,9 @@ typedef struct cweb_t
 
 	cweb_event_t **events;
 	unsigned int events_num;
+
+	cweb_redirect_t *redirects;
+	size_t redirects_num;
 
 	cweb_room_t *rooms;
 	size_t rooms_num;
@@ -328,6 +337,20 @@ static int cweb_websocket_protocol(
 	return 0;
 }
 
+static cweb_redirect_t *cweb_get_redirect(const cweb_t *self,
+		const unsigned char *from)
+{
+	int i;
+	for(i = 0; i < self->redirects_num; i++)
+	{
+		if(!strcmp(from, self->redirects[i].from))
+		{
+			return &self->redirects[i];
+		}
+	}
+	return NULL;
+}
+
 static int lws_serve_http_string(struct lws *wsi,
 				    const char *string,
 				    const size_t stringlen,
@@ -405,14 +428,17 @@ static int cweb_http_protocol(
 			break;
 		case LWS_CALLBACK_HTTP:
 			{
+				char *resource_path;
 				int cweb_resources = 0;
 				char *requested_uri = (char *) in;
 				/* printf("requested URI: %s\n", requested_uri); */
 
-				if(strcmp(requested_uri, "/") == 0)
+				cweb_redirect_t *redir = cweb_get_redirect(server, requested_uri);
+				if(redir)
 				{
+					printf("redirecting from %s to %s\n", redir->from, redir->to);
 					size_t response_len = LWS_SEND_BUFFER_PRE_PADDING + 1000 +
-							LWS_SEND_BUFFER_POST_PADDING;
+						LWS_SEND_BUFFER_POST_PADDING;
 					unsigned char *buf = (unsigned char*) malloc(response_len);
 					/* void *universal_response = "Hello, World!"; */
 
@@ -421,21 +447,21 @@ static int cweb_http_protocol(
 
 					lws_add_http_header_status(wsi, 301, &p, end);
 					lws_add_http_header_by_token(wsi,
-							WSI_TOKEN_HTTP_LOCATION, (unsigned char *)"/index.c", 8, &p, end);
+							WSI_TOKEN_HTTP_LOCATION,
+							redir->to, strlen(redir->to), &p, end);
+
 					lws_finalize_http_header(wsi, &p, end);
 
 					lws_write(wsi, buf + LWS_SEND_BUFFER_PRE_PADDING, 1000, LWS_WRITE_HTTP_HEADERS);
 					free(buf);
 					break;
-
 				}
-				else if(strncmp(requested_uri, "/cweb/", sizeof("/cweb/") - 1) == 0)
+
+				if(strncmp(requested_uri, "/cweb/", sizeof("/cweb/") - 1) == 0)
 				{
 					requested_uri += sizeof("/cweb/") - 2;
 					cweb_resources = 1;
 				}
-
-				char *resource_path;
 
 				if (cwd != NULL)
 				{
@@ -507,6 +533,9 @@ cweb_t *cweb_new(const int port)
 	self->info.iface = NULL;
 	self->info.protocols = self->protocols;
 	self->info.extensions = NULL;
+
+	self->redirects = NULL;
+	self->redirects_num = 0;
 
 	self->rooms = NULL;
 	self->rooms_num = 0;
@@ -594,17 +623,32 @@ void cweb_socket_on(cweb_socket_t *self, const char *event, event_callback_t cb)
 	self->events_num = l;
 }
 
-static cweb_room_t *cweb_add_room(cweb_t *server, const char *room_name)
+void cweb_redirect(cweb_t *self, const char *from, const char *to)
 {
-	size_t l = server->rooms_num + 1;
-	server->rooms = realloc(server->rooms, l * sizeof(*server->rooms));
+	cweb_redirect_t *redir = cweb_get_redirect(self, from);
 
-	cweb_room_t *room = &server->rooms[l - 1];
+	if(redir == NULL)
+	{
+		size_t l = self->redirects_num + 1;
+		self->redirects = realloc(self->redirects, (sizeof *self->redirects) * l);
+		redir = &self->redirects[l - 1];
+		self->redirects_num = l;
+	}
+	redir->from = strdup(from);
+	redir->to = strdup(to);
+}
+
+static cweb_room_t *cweb_add_room(cweb_t *self, const char *room_name)
+{
+	size_t l = self->rooms_num + 1;
+	self->rooms = realloc(self->rooms, l * sizeof(*self->rooms));
+
+	cweb_room_t *room = &self->rooms[l - 1];
 	strcpy(room->name, room_name);
 	room->sockets = NULL;
 	room->sockets_num = 0;
 
-	server->rooms_num = l;
+	self->rooms_num = l;
 
 	return room;
 }
