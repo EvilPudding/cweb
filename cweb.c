@@ -42,7 +42,7 @@ typedef struct cweb_t
 	cweb_redirect_t *redirects;
 
 	size_t rooms_num;
-	cweb_room_t *rooms;
+	cweb_room_t **rooms;
 
 } cweb_t;
 
@@ -60,6 +60,8 @@ typedef struct cweb_socket_t
 
 	cweb_event_t *events;
 	unsigned int events_num;
+
+	int pipe[2];
 } cweb_socket_t;
 
 typedef struct
@@ -148,43 +150,56 @@ cweb_t *cweb_socket_get_server(cweb_socket_t *self)
 	return self->server;
 }
 
+static void cweb_socket_send_next(cweb_socket_t *self)
+{
+	int len = 0;
+	int n = read(self->pipe[0], &len, sizeof(len));
+	if(!n) return;
+	if(!len) return;
+	char buffer[LWS_PRE + len + LWS_PRE];
+	n = read(self->pipe[0], buffer + LWS_PRE, len);
+	if(!n) return;
+
+	lws_write(self->wsi, buffer + LWS_PRE, len, LWS_WRITE_TEXT);
+}
+
 void cweb_socket_send(cweb_socket_t *self, const char *message, size_t len)
 {
 	if(len && self->wsi)
 	{
-		unsigned char buf[LWS_SEND_BUFFER_PRE_PADDING + len +
-			LWS_SEND_BUFFER_POST_PADDING];
-
-		strcpy(buf + LWS_SEND_BUFFER_PRE_PADDING, message);
-
-		lws_write(self->wsi, &buf[LWS_SEND_BUFFER_PRE_PADDING], len, LWS_WRITE_TEXT);
-
+		int l = (int)len;
+		write(self->pipe[1], &l, sizeof(l));
+		write(self->pipe[1], message, len);
+		lws_callback_on_writable(self->wsi);
 	}
 }
 
-static char *generate_emit_message(const char *emit_name, json_t *data, int id)
+static char *generate_emit_message(const char *emit_name, const json_t *data, int id)
 {
 	json_t *info = json_object();
 	json_t *jname = json_string(emit_name);
 	json_t *jid = json_integer(id);
 	json_object_set(info, "event", jname);
 	json_object_set(info, "cbi", jid);
+	json_decref(jname);
+	json_decref(jid);
 
 	if(data != NULL)
 	{
-		json_object_set(info, "data", data);
+		json_t *jdata = json_deep_copy(data);
+		/* TODO: Remove unnecssary copy */
+		json_object_set(info, "data", jdata);
+		json_decref(jdata);
 	}
 
 	char *message = json_dumps(info, 0);
 
-	json_decref(jname);
 	json_decref(info);
-	json_decref(jid);
 
 	return message;
 }
 
-void cweb_socket_emit(cweb_socket_t *self, const char *event, json_t *data,
+void cweb_socket_emit(cweb_socket_t *self, const char *event, const json_t *data,
 		cweb_socket_response_t response)
 {
 	int id = self->ms_id++;
@@ -217,9 +232,9 @@ cweb_room_t *cweb_get_room(cweb_t *self, const char *room)
 	int i;
 	for(i = 0; i < self->rooms_num; i++)
 	{
-		if(!strcmp(room, self->rooms[i].name))
+		if(!strcmp(room, self->rooms[i]->name))
 		{
-			return &self->rooms[i];
+			return self->rooms[i];
 		}
 	}
 	return NULL;
@@ -231,7 +246,7 @@ cweb_room_t *cweb_socket_get_room(cweb_socket_t *self, const char *room)
 }
 
 void cweb_to_room_send(cweb_t *self, const char *room_name,
-		const char *message, size_t len, cweb_socket_t *except)
+		const char *message, size_t len, const cweb_socket_t *except)
 {
 	int i;
 	cweb_room_t *room = cweb_get_room(self, room_name);
@@ -247,8 +262,8 @@ void cweb_to_room_send(cweb_t *self, const char *room_name,
 }
 
 void cweb_to_room_emit(cweb_t *self, const char *room_name,
-		const char *event, json_t *data,
-		cweb_socket_response_t res, cweb_socket_t *except)
+		const char *event, const json_t *data,
+		cweb_socket_response_t res, const cweb_socket_t *except)
 {
 	int i;
 	cweb_room_t *room = cweb_get_room(self, room_name);
@@ -266,8 +281,8 @@ void cweb_to_room_emit(cweb_t *self, const char *room_name,
 }
 
 void cweb_socket_to_room_emit(cweb_socket_t *self, const char *room,
-		const char *event, json_t *data, cweb_socket_response_t res,
-		cweb_socket_t *except)
+		const char *event, const json_t *data, cweb_socket_response_t res,
+		const cweb_socket_t *except)
 {
 	cweb_to_room_emit(cweb_socket_get_server(self), room, event, data, res, except);
 }
@@ -327,6 +342,10 @@ static int cweb_websocket_protocol(
 		socket->server = server;
 		socket->wsi = wsi;
 		socket->ms_id = 1;
+		if(!socket->pipe[0])
+		{
+			pipe(socket->pipe);
+		}
 		cweb_socket_on(socket, "cweb_cb", cweb_socket_got_response);
 		cb = cweb_socket_get_event(socket, "connected");
 		if(cb)
@@ -351,16 +370,19 @@ static int cweb_websocket_protocol(
 		break;
 
 	case LWS_CALLBACK_CLOSED:
-		socket->wsi = NULL;
 		cb = cweb_socket_get_event(socket, "disconnected");
 		if(cb)
 		{
 			cb(socket, NULL, 0, NULL);
 		}
+		close(socket->pipe[0]);
+		close(socket->pipe[1]);
+		socket->wsi = NULL;
 		cweb_socket_leave_all(socket);
-
 		break;
-
+	case LWS_CALLBACK_SERVER_WRITEABLE:
+		cweb_socket_send_next(socket);
+		break;
 	case LWS_CALLBACK_PROTOCOL_INIT:
 		printf("Protocol started successfully.\n");
 		break;
@@ -738,7 +760,7 @@ static cweb_room_t *cweb_add_room(cweb_t *self, const char *room_name)
 	size_t l = self->rooms_num + 1;
 	self->rooms = realloc(self->rooms, l * sizeof(*self->rooms));
 
-	cweb_room_t *room = &self->rooms[l - 1];
+	cweb_room_t *room = self->rooms[l - 1] = malloc(sizeof *room);
 	strcpy(room->name, room_name);
 	room->sockets = NULL;
 	room->sockets_num = 0;
@@ -779,8 +801,17 @@ void cweb_socket_join(cweb_socket_t *self, const char *room_name)
 	(*room_free_socket) = self;
 
 	cweb_room_t **room_iter;
-	for(room_iter = self->rooms; *(room_iter + 1); room_iter++);
+	for(room_iter = self->rooms; *room_iter; room_iter++);
 	(*room_iter) = room;
+}
+
+void cweb_socket_print_rooms(const cweb_socket_t *self)
+{
+	int i;
+	for(i = 0; self->rooms[i]; i++)
+	{
+		printf("%s\n", self->rooms[i]->name);
+	}
 }
 
 static void cweb_room_remove_socket(cweb_room_t *self, const cweb_socket_t *socket)
@@ -790,12 +821,8 @@ static void cweb_room_remove_socket(cweb_room_t *self, const cweb_socket_t *sock
 	{
 		if(self->sockets[i] == socket)
 		{
-			int j;
-			for(j = i; j < self->sockets_num; j++)
-			{
-				self->sockets[j] = self->sockets[j + 1];
-			}
-			self->sockets_num--;
+			printf("removing socket from room '%s' ^_^\n", self->name);
+			self->sockets[i] = NULL;
 			break;
 		}
 	}
@@ -818,10 +845,11 @@ void cweb_socket_leave(cweb_socket_t *self, const char *room_name)
 		if(*room_iter == room)
 		{
 			cweb_room_t **room_jter;
-			for(room_jter = room_iter; (*room_jter); room_jter++)
+			for(room_jter = room_iter; *room_jter; room_jter++)
 			{
 				*room_jter = *(room_jter + 1);
 			}
+			break;
 		}
 	}
 }
@@ -834,7 +862,6 @@ void cweb_socket_leave_all(cweb_socket_t *self)
 		cweb_room_remove_socket(*room_iter, self);
 		*room_iter = NULL;
 	}
-
 }
 
 int cweb_socket_inside(cweb_socket_t *self, const char *room_name)

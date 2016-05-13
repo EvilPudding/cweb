@@ -34,7 +34,7 @@ void cweb_set_public(cweb_t *self, const char *dir);
 cweb_room_t *cweb_get_room(cweb_t *self, const char *room);
 
 void cweb_to_room_send(cweb_t *self, const char *room_name,
-		const char *message, size_t len, cweb_socket_t *except);
+		const char *message, size_t len, const cweb_socket_t *except);
 
 /* socket */
 
@@ -46,7 +46,7 @@ cweb_t *cweb_socket_get_server(cweb_socket_t *self);
 
 void cweb_socket_send(cweb_socket_t *self, const char *message, size_t len);
 
-void cweb_socket_emit(cweb_socket_t *self, const char *event, json_t *data,
+void cweb_socket_emit(cweb_socket_t *self, const char *event, const json_t *data,
 		cweb_socket_response_t response);
 
 void *cweb_socket_get_user_ptr(cweb_socket_t *self);
@@ -63,8 +63,8 @@ int cweb_socket_inside(cweb_socket_t *self, const char *room_name);
 cweb_room_t *cweb_socket_get_room(cweb_socket_t *self, const char *room);
 
 void cweb_socket_to_room_emit(cweb_socket_t *self, const char *room,
-		const char *event, json_t *data, cweb_socket_response_t res,
-		cweb_socket_t *except);
+		const char *event, const json_t *data, cweb_socket_response_t res,
+		const cweb_socket_t *except);
 
 /* TODO:vector */
 
