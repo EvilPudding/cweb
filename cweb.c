@@ -794,6 +794,23 @@ void cweb_socket_join(cweb_socket_t *self, const char *room_name)
 	(*room_iter) = room;
 }
 
+static void cweb_room_remove_socket(cweb_room_t *self, const cweb_socket_t *socket)
+{
+	int i;
+	for(i = 0; i < self->sockets_num; i++)
+	{
+		if(self->sockets[i] == socket)
+		{
+			int j;
+			for(j = i; j < self->sockets_num; j++)
+			{
+				self->sockets[j] = self->sockets[j + 1];
+			}
+			break;
+		}
+	}
+}
+
 void cweb_socket_leave(cweb_socket_t *self, const char *room_name)
 {
 	cweb_t *server = cweb_socket_get_server(self);
@@ -803,22 +820,31 @@ void cweb_socket_leave(cweb_socket_t *self, const char *room_name)
 		return;
 	}
 
-	int i;
-	for(i = 0; i < room->sockets_num; i++)
-	{
-		if(room->sockets[i] == self)
-		{
-			room->sockets[i] = NULL;
-			break;
-		}
-	}
+	cweb_room_remove_socket(room, self);
 
 	cweb_room_t **room_iter;
 	for(room_iter = self->rooms; *room_iter; room_iter++)
 	{
 		if(*room_iter == room)
-			*room_iter = NULL;
+		{
+			cweb_room_t **room_jter;
+			for(room_jter = room_iter; (*room_jter); room_jter++)
+			{
+				*room_jter = *(room_jter + 1);
+			}
+		}
 	}
+}
+
+void cweb_socket_leave_all(cweb_socket_t *self)
+{
+	cweb_room_t **room_iter;
+	for(room_iter = self->rooms; *room_iter; room_iter++)
+	{
+		cweb_room_remove_socket(*room_iter, self);
+		*room_iter = NULL;
+	}
+
 }
 
 int cweb_socket_inside(cweb_socket_t *self, const char *room_name)

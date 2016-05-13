@@ -56,6 +56,8 @@ void cweb_socket_join(cweb_socket_t *self, const char *room_name);
 
 void cweb_socket_leave(cweb_socket_t *self, const char *room_name);
 
+void cweb_socket_leave_all(cweb_socket_t *self);
+
 int cweb_socket_inside(cweb_socket_t *self, const char *room_name);
 
 cweb_room_t *cweb_socket_get_room(cweb_socket_t *self, const char *room);
