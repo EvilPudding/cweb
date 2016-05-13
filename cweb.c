@@ -152,13 +152,13 @@ void cweb_socket_send(cweb_socket_t *self, const char *message, size_t len)
 {
 	if(len)
 	{
-		unsigned char *buf = malloc(LWS_SEND_BUFFER_PRE_PADDING + len +
-				LWS_SEND_BUFFER_POST_PADDING);
+		unsigned char buf[LWS_SEND_BUFFER_PRE_PADDING + len +
+			LWS_SEND_BUFFER_POST_PADDING];
+
 		strcpy(buf + LWS_SEND_BUFFER_PRE_PADDING, message);
 
 		lws_write(self->wsi, &buf[LWS_SEND_BUFFER_PRE_PADDING], len, LWS_WRITE_TEXT);
 
-		free(buf);
 	}
 }
 
@@ -496,9 +496,9 @@ static int cweb_http_protocol(
 				if(redir)
 				{
 					printf("redirecting from %s to %s\n", redir->from, redir->to);
-					size_t response_len = LWS_SEND_BUFFER_PRE_PADDING + 1000 +
+					const size_t response_len = LWS_SEND_BUFFER_PRE_PADDING + 1000 +
 						LWS_SEND_BUFFER_POST_PADDING;
-					unsigned char *buf = (unsigned char*) malloc(response_len);
+					unsigned char buf[response_len];
 					/* void *universal_response = "Hello, World!"; */
 
 					unsigned char *p = buf + LWS_SEND_BUFFER_PRE_PADDING;
@@ -512,7 +512,6 @@ static int cweb_http_protocol(
 					lws_finalize_http_header(wsi, &p, end);
 
 					lws_write(wsi, buf + LWS_SEND_BUFFER_PRE_PADDING, 1000, LWS_WRITE_HTTP_HEADERS);
-					free(buf);
 					break;
 				}
 
