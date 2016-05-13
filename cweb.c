@@ -806,6 +806,7 @@ static void cweb_room_remove_socket(cweb_room_t *self, const cweb_socket_t *sock
 			{
 				self->sockets[j] = self->sockets[j + 1];
 			}
+			self->sockets_num--;
 			break;
 		}
 	}
