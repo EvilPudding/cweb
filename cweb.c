@@ -353,23 +353,12 @@ static int cweb_websocket_protocol(
 	case LWS_CALLBACK_CLOSED:
 		socket->wsi = NULL;
 		cb = cweb_socket_get_event(socket, "disconnected");
-
-		for(cweb_room_t **room_iter = socket->rooms; *room_iter; room_iter++)
-		{
-			for(int i = 0; i < (*room_iter)->sockets_num; i++)
-			{
-				cweb_socket_t **soc = &(*room_iter)->sockets[i];
-				if((*soc) == socket)
-				{
-					(*soc) = NULL;
-				}
-			}
-		}
-
 		if(cb)
 		{
 			cb(socket, NULL, 0, NULL);
 		}
+		cweb_socket_leave_all(socket);
+
 		break;
 
 	case LWS_CALLBACK_PROTOCOL_INIT:
