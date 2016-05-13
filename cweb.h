@@ -54,6 +54,10 @@ void cweb_socket_set_user_ptr(cweb_socket_t *self, void *userptr);
 
 void cweb_socket_join(cweb_socket_t *self, const char *room_name);
 
+void cweb_socket_leave(cweb_socket_t *self, const char *room_name);
+
+int cweb_socket_inside(cweb_socket_t *self, const char *room_name);
+
 cweb_room_t *cweb_socket_get_room(cweb_socket_t *self, const char *room);
 
 void cweb_socket_to_room_emit(cweb_socket_t *self, const char *room,
