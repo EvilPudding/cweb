@@ -150,7 +150,7 @@ cweb_t *cweb_socket_get_server(cweb_socket_t *self)
 
 void cweb_socket_send(cweb_socket_t *self, const char *message, size_t len)
 {
-	if(len)
+	if(len && self->wsi)
 	{
 		unsigned char buf[LWS_SEND_BUFFER_PRE_PADDING + len +
 			LWS_SEND_BUFFER_POST_PADDING];
