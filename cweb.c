@@ -161,6 +161,11 @@ static void cweb_socket_send_next(cweb_socket_t *self)
 	if(!n) return;
 
 	lws_write(self->wsi, buffer + LWS_PRE, len, LWS_WRITE_TEXT);
+
+	if (poll(&(struct pollfd){ .fd = self->pipe[0], .events = POLLIN }, 1, 0)==1)
+	{
+		lws_callback_on_writable(self->wsi);
+	}
 }
 
 void cweb_socket_send(cweb_socket_t *self, const char *message, size_t len)
