@@ -62,6 +62,7 @@ typedef struct cweb_socket_t
 	unsigned int events_num;
 
 	int pipe[2];
+	int httpipe[2];
 } cweb_socket_t;
 
 typedef struct
@@ -417,7 +418,7 @@ static cweb_redirect_t *cweb_get_redirect(const cweb_t *self,
 	return NULL;
 }
 
-static int lws_serve_http_string(struct lws *wsi, unsigned char *string,
+static int lws_serve_http_string(struct lws *wsi, cweb_socket_t *socket, unsigned char *string,
 				    size_t stringlen, const char *content_type,
 				    const char *other_headers, int other_headers_len)
 {
@@ -456,10 +457,14 @@ static int lws_serve_http_string(struct lws *wsi, unsigned char *string,
 	if(ret < 0)
 		return 1;
 
-	ret = lws_write(wsi, string, stringlen, LWS_WRITE_HTTP);
+	/* pipe(socket->httpipe); write(socket->httpipe[1], string, stringlen); */
+	memcpy(p + LWS_PRE, string, stringlen);
+
+	ret = lws_write(wsi, p + LWS_PRE, stringlen, LWS_WRITE_HTTP);
 	if(ret < 0)
 		return 1;
-	/* ret = lws_write(wsi, response, stringlen, LWS_WRITE_HTTP_HEADERS); */
+	printf("kek\n");
+	/* lws_callback_on_writable(wsi); */
 	return ret;
 }
 
@@ -502,6 +507,7 @@ static int cweb_http_protocol(
 		return 0;
 	}
 	cweb_t *server = lws_context_user(lws_get_context(wsi));
+	cweb_socket_t *socket = cwebuser;
 
 	static char cwd[1024] = "";
 	if(cwd[0] == '\0')
@@ -512,8 +518,84 @@ static int cweb_http_protocol(
 		}
 	}
 
+	char buf[256];
 	switch (reason)
 	{
+		case LWS_CALLBACK_HTTP_BODY:
+			strncpy(buf, in, 20);
+			buf[20] = '\0';
+			if (len < 20)
+				buf[len] = '\0';
+
+			lwsl_notice("LWS_CALLBACK_HTTP_BODY: %s... len %d\n",
+					(const char *)buf, (int)len);
+
+			break;
+
+		case LWS_CALLBACK_HTTP_BODY_COMPLETION:
+			lwsl_notice("LWS_CALLBACK_HTTP_BODY_COMPLETION\n");
+			/* the whole of the sent body arrived, close or reuse the connection */
+			lws_return_http_status(wsi, HTTP_STATUS_OK, NULL);
+			goto try_to_reuse;
+
+		case LWS_CALLBACK_HTTP_FILE_COMPLETION:
+			goto try_to_reuse;
+
+		case LWS_CALLBACK_HTTP_WRITEABLE:
+			lwsl_info("LWS_CALLBACK_HTTP_WRITEABLE\n");
+
+			if (socket->httpipe[0] == 0)
+				goto try_to_reuse;
+
+			int sent = 0;
+			do {
+				char buffer[1000];
+				/* we'd like the send this much */
+				int n = sizeof(buffer) - LWS_PRE;
+
+				/* but if the peer told us he wants less, we can adapt */
+				int m = lws_get_peer_write_allowance(wsi);
+
+				/* -1 means not using a protocol that has this info */
+				if (m == 0)
+					/* right now, peer can't handle anything */
+					goto later;
+
+				if (m != -1 && m < n)
+					/* he couldn't handle that much */
+					n = m;
+
+				n = read(socket->httpipe[0], buffer + LWS_PRE, n);
+				/* sent it all, close conn */
+				if (n == 0)
+					goto penultimate;
+				m = lws_write(wsi, buffer + LWS_PRE, n, LWS_WRITE_HTTP);
+				if (m < 0) {
+					lwsl_err("write failed\n");
+					/* write failed, close conn */
+					goto bail;
+				}
+				if (m) /* while still active, extend timeout */
+					lws_set_timeout(wsi, PENDING_TIMEOUT_HTTP_CONTENT, 5);
+				sent += m;
+
+			} while (!lws_send_pipe_choked(wsi) && (sent < 1024 * 1024));
+later:
+			printf("LATER\n");
+			lws_callback_on_writable(wsi);
+			break;
+penultimate:
+			printf("PENUL\n");
+			close(socket->httpipe[0]); socket->httpipe[0] = 0;
+			close(socket->httpipe[1]); socket->httpipe[1] = 0;
+			goto try_to_reuse;
+
+bail:
+			printf("BAIL\n");
+			close(socket->httpipe[0]); socket->httpipe[0] = 0;
+			close(socket->httpipe[1]); socket->httpipe[1] = 0;
+			return -1;
+
 		case LWS_CALLBACK_CLIENT_WRITEABLE:
 			printf("connection established\n");
 			break;
@@ -537,14 +619,14 @@ static int cweb_http_protocol(
 				if(redir)
 				{
 					printf("redirecting from %s to %s\n", redir->from, redir->to);
-					const size_t response_len = LWS_SEND_BUFFER_PRE_PADDING + 1000 +
-						LWS_SEND_BUFFER_POST_PADDING;
+					const size_t response_len = LWS_PRE + 1000;
 					unsigned char buf[response_len];
 					/* void *universal_response = "Hello, World!"; */
 
-					unsigned char *p = buf + LWS_SEND_BUFFER_PRE_PADDING;
-					unsigned char *end = p + 1000;
+					unsigned char *p = buf + LWS_PRE;
+					unsigned char *end = p + 1000 - LWS_PRE;
 
+					/* lws_add_http_header_content_length(wsi, 0, &p, end); */
 					lws_add_http_header_status(wsi, 301, &p, end);
 					lws_add_http_header_by_token(wsi,
 							WSI_TOKEN_HTTP_LOCATION,
@@ -552,7 +634,8 @@ static int cweb_http_protocol(
 
 					lws_finalize_http_header(wsi, &p, end);
 
-					lws_write(wsi, buf + LWS_SEND_BUFFER_PRE_PADDING, 1000, LWS_WRITE_HTTP_HEADERS);
+					*p = '\0';
+					lws_write(wsi, buf + LWS_PRE, p - (buf + LWS_PRE), LWS_WRITE_HTTP_HEADERS);
 					break;
 				}
 
@@ -591,17 +674,18 @@ static int cweb_http_protocol(
 						}
 						else
 						{
-							int n = lws_serve_http_string(wsi, buffer, (size_t)len, ft->mime, NULL, 0);
+							printf("sending string\n");
+							int n = lws_serve_http_string(wsi, socket, buffer, (size_t)len, ft->mime, NULL, 0);
 							free(buffer);
-							if(n < 0 || ((n > 0) && lws_http_transaction_completed(wsi)))
-							{
-								return -1;
-							}
 						}
 					}
 					else
 					{
-						lws_serve_http_file(wsi, resource_path, ft->mime, NULL, 0);
+						int n = lws_serve_http_file(wsi, resource_path, ft->mime, NULL, 0);
+						if(n < 0 || ((n > 0) && lws_http_transaction_completed(wsi)))
+						{
+							return -1;
+						}
 					}
 				}
 				goto try_to_reuse;
@@ -637,7 +721,7 @@ cweb_t *cweb_new(const int port)
 {
 	cweb_t *self = calloc(1, sizeof(*self));
 
-	cweb_add_protocol(self, "http-only", cweb_http_protocol, 0);
+	cweb_add_protocol(self, "http-only", cweb_http_protocol, sizeof(cweb_socket_t));
 
 	memset(&self->info, 0, sizeof(self->info));
 	self->info.port = port;
