@@ -62,7 +62,8 @@ typedef struct cweb_socket_t
 	unsigned int events_num;
 
 	int pipe[2];
-	int httpipe[2];
+	int http_read;
+	int http_write;
 } cweb_socket_t;
 
 typedef struct
@@ -420,12 +421,12 @@ static cweb_redirect_t *cweb_get_redirect(const cweb_t *self,
 
 static int cweb_socket_serve_string_fragment(cweb_socket_t *socket)
 {
-	if (socket->httpipe[0] == 0)
+	if (socket->http_read <= 0)
 		goto try_to_reuse;
 
 	int sent = 0;
 	do {
-		char buffer[1000];
+		char buffer[4096 + LWS_PRE];
 		/* we'd like the send this much */
 		int n = sizeof(buffer) - LWS_PRE;
 
@@ -445,12 +446,13 @@ static int cweb_socket_serve_string_fragment(cweb_socket_t *socket)
 			n = m;
 		}
 
-		n = read(socket->httpipe[0], buffer + LWS_PRE, n);
+		n = read(socket->http_read, buffer + LWS_PRE, n);
 		/* sent it all, close conn */
 		if (n <= 0)
 		{
 			goto penultimate;
 		}
+		printf("sending size %d # %d sent\n", n, sent + n);
 		m = lws_write(socket->wsi, buffer + LWS_PRE, n, LWS_WRITE_HTTP);
 		if (m < 0) {
 			lwsl_err("write failed\n");
@@ -468,13 +470,13 @@ later:
 	lws_callback_on_writable(socket->wsi);
 	return 0;
 penultimate:
-	close(socket->httpipe[0]); socket->httpipe[0] = 0;
-	close(socket->httpipe[1]); socket->httpipe[1] = 0;
+	close(socket->http_read); socket->http_read = 0;
+	close(socket->http_write); socket->http_write = 0;
 	goto try_to_reuse;
 
 bail:
-	close(socket->httpipe[0]); socket->httpipe[0] = 0;
-	close(socket->httpipe[1]); socket->httpipe[1] = 0;
+	close(socket->http_read); socket->http_read = 0;
+	close(socket->http_write); socket->http_write = 0;
 	return -1;
 
 try_to_reuse:
@@ -487,8 +489,8 @@ try_to_reuse:
 
 }
 
-static int lws_serve_http_string(cweb_socket_t *socket, unsigned char *string,
-				    size_t stringlen, const char *content_type,
+static int lws_serve_http_fd(cweb_socket_t *socket, size_t len,
+				    const char *content_type,
 				    const char *other_headers, int other_headers_len)
 {
 	unsigned char buffer[4096 + LWS_PRE];
@@ -498,14 +500,6 @@ static int lws_serve_http_string(cweb_socket_t *socket, unsigned char *string,
 	unsigned char *end = p + sizeof(buffer) - LWS_PRE;
 
 	int ret = -1;
-
-	if(socket->httpipe[0]) close(socket->httpipe[0]);
-	if(socket->httpipe[1]) close(socket->httpipe[1]);
-	pipe(socket->httpipe);
-	int n = write(socket->httpipe[1], string, stringlen);
-	int flags = fcntl(socket->httpipe[0], F_GETFL, 0);
-	fcntl(socket->httpipe[0], F_SETFL, flags | O_NONBLOCK);
-
 
 	if(lws_add_http_header_status(socket->wsi, 200, &p, end))
 		return 1;
@@ -517,8 +511,9 @@ static int lws_serve_http_string(cweb_socket_t *socket, unsigned char *string,
 					 (unsigned char *)content_type,
 					 strlen(content_type), &p, end))
 		return 1;
-	if(lws_add_http_header_content_length(socket->wsi, n, &p, end))
+	if(lws_add_http_header_content_length(socket->wsi, len, &p, end))
 		return 1;
+	printf("len: %lu\n", len);
 
 	if(other_headers) {
 		if((end - p) < other_headers_len)
@@ -539,8 +534,48 @@ static int lws_serve_http_string(cweb_socket_t *socket, unsigned char *string,
 	/* ret = lws_write(socket->wsi, p + LWS_PRE, stringlen, LWS_WRITE_HTTP); */
 	/* if(ret < 0) */
 		/* return 1; */
-	ret = cweb_socket_serve_string_fragment(socket);
-	return ret;
+	return cweb_socket_serve_string_fragment(socket);
+}
+
+static int socket_serve_http_file(cweb_socket_t *socket,
+		const char *resource_path, const char *content_type,
+		const char *other_headers, int other_headers_len)
+{
+	if(socket->http_read) close(socket->http_read); socket->http_read = 0;
+	if(socket->http_write) close(socket->http_write); socket->http_read = 0;
+
+	socket->http_read = open(resource_path, O_RDONLY | O_NONBLOCK);
+
+	int n = lseek(socket->http_read, 0L, SEEK_END);
+	printf("FILE IS %d %s\n", n, resource_path);
+	lseek(socket->http_read, 0L, SEEK_SET);
+
+	if(n == -1) return -1;
+
+	return lws_serve_http_fd(socket, n, content_type, other_headers,
+			other_headers_len);
+}
+
+static int socket_serve_http_string(cweb_socket_t *socket, unsigned char *string,
+				    size_t stringlen, const char *content_type,
+				    const char *other_headers, int other_headers_len)
+{
+	int pipe_vec[2];
+
+	if(socket->http_read) close(socket->http_read); socket->http_read = 0;
+	if(socket->http_write) close(socket->http_write); socket->http_read = 0;
+
+	pipe(pipe_vec);
+
+	socket->http_read = pipe_vec[0]; socket->http_write = pipe_vec[1];
+
+	int flags = fcntl(socket->http_read, F_GETFL, 0);
+	fcntl(socket->http_read, F_SETFL, flags | O_NONBLOCK);
+
+	int n = write(socket->http_write, string, stringlen);
+
+	return lws_serve_http_fd(socket, n, content_type, other_headers,
+			other_headers_len);
 }
 
 static void dump_handshake_info(struct lws *wsi)
@@ -701,18 +736,16 @@ static int cweb_http_protocol(
 						}
 						else
 						{
-							int n = lws_serve_http_string(socket, buffer, (size_t)len, ft->mime, NULL, 0);
+							int n = socket_serve_http_string(socket, buffer, (size_t)len, ft->mime, NULL, 0);
 							free(buffer);
 							return n;
 						}
 					}
 					else
 					{
-						int n = lws_serve_http_file(wsi, resource_path, ft->mime, NULL, 0);
-						if(n < 0 || ((n > 0) && lws_http_transaction_completed(wsi)))
-						{
-							return -1;
-						}
+						int n = socket_serve_http_file(socket, resource_path,
+								ft->mime, NULL, 0);
+						return n;
 					}
 				}
 				goto try_to_reuse;
