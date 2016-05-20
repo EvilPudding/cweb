@@ -478,10 +478,11 @@ bail:
 	return -1;
 
 try_to_reuse:
-	if(lws_http_transaction_completed(socket->wsi))
-	{
-		return -1;
-	}
+	return -1;
+	/* if(lws_http_transaction_completed(socket->wsi)) */
+	/* { */
+	/* 	return -1; */
+	/* } */
 
 
 }
@@ -809,7 +810,6 @@ int cweb_run(cweb_t *self)
 	struct lws_context *context;
 
 	context = lws_create_context(&self->info);
-
 	if(!context)
 	{
 		fprintf(stderr, "libwebsocket init failed\n");
