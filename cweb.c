@@ -765,6 +765,9 @@ cweb_t *cweb_new(const int port)
 	self->rooms = NULL;
 	self->rooms_num = 0;
 
+	self->events = NULL;
+	self->events_num = 0;
+
 	self->info.user = self;
 
 	self->info.ssl_cert_filepath = NULL;
@@ -813,7 +816,7 @@ int cweb_run(cweb_t *self)
 		return -1;
 	}
 
-	int n;
+	int n = 0;
 	while(n >= 0)
 	{
 		n = lws_service(context, 50);
