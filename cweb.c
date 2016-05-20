@@ -498,6 +498,14 @@ static int lws_serve_http_string(cweb_socket_t *socket, unsigned char *string,
 
 	int ret = -1;
 
+	if(socket->httpipe[0]) close(socket->httpipe[0]);
+	if(socket->httpipe[1]) close(socket->httpipe[1]);
+	pipe(socket->httpipe);
+	int n = write(socket->httpipe[1], string, stringlen);
+	int flags = fcntl(socket->httpipe[0], F_GETFL, 0);
+	fcntl(socket->httpipe[0], F_SETFL, flags | O_NONBLOCK);
+
+
 	if(lws_add_http_header_status(socket->wsi, 200, &p, end))
 		return 1;
 	if(lws_add_http_header_by_token(socket->wsi, WSI_TOKEN_HTTP_SERVER,
@@ -508,7 +516,7 @@ static int lws_serve_http_string(cweb_socket_t *socket, unsigned char *string,
 					 (unsigned char *)content_type,
 					 strlen(content_type), &p, end))
 		return 1;
-	if(lws_add_http_header_content_length(socket->wsi, stringlen, &p, end))
+	if(lws_add_http_header_content_length(socket->wsi, n, &p, end))
 		return 1;
 
 	if(other_headers) {
@@ -524,10 +532,6 @@ static int lws_serve_http_string(cweb_socket_t *socket, unsigned char *string,
 	ret = lws_write(socket->wsi, start, p - start, LWS_WRITE_HTTP_HEADERS);
 	if(ret < 0)
 		return 1;
-
-	pipe(socket->httpipe); write(socket->httpipe[1], string, stringlen);
-	int flags = fcntl(socket->httpipe[0], F_GETFL, 0);
-	fcntl(socket->httpipe[0], F_SETFL, flags | O_NONBLOCK);
 
 	/* memcpy(p + LWS_PRE, string, stringlen); */
 
@@ -641,12 +645,12 @@ static int cweb_http_protocol(
 				if(redir)
 				{
 					printf("redirecting from %s to %s\n", redir->from, redir->to);
-					const size_t response_len = LWS_PRE + 1000;
+					const size_t response_len = LWS_PRE + 512;
 					unsigned char buf[response_len];
 					/* void *universal_response = "Hello, World!"; */
 
 					unsigned char *p = buf + LWS_PRE;
-					unsigned char *end = p + 1000 - LWS_PRE;
+					unsigned char *end = p + 512 - LWS_PRE;
 
 					/* lws_add_http_header_content_length(wsi, 0, &p, end); */
 					lws_add_http_header_status(wsi, 301, &p, end);
@@ -658,7 +662,7 @@ static int cweb_http_protocol(
 
 					*p = '\0';
 					lws_write(wsi, buf + LWS_PRE, p - (buf + LWS_PRE), LWS_WRITE_HTTP_HEADERS);
-					break;
+					return -1;
 				}
 
 				if(strncmp(requested_uri, "/cweb/", sizeof("/cweb/") - 1) == 0)
@@ -696,13 +700,9 @@ static int cweb_http_protocol(
 						}
 						else
 						{
-							printf("sending string\n");
 							int n = lws_serve_http_string(socket, buffer, (size_t)len, ft->mime, NULL, 0);
 							free(buffer);
-							if(n < 0 || ((n > 0) && lws_http_transaction_completed(wsi)))
-							{
-								return -1;
-							}
+							return n;
 						}
 					}
 					else

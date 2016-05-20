@@ -72,7 +72,7 @@ void sockets_disconnected(cweb_socket_t *socket, const json_t *data,
 int main(int argc, char **argv)
 {
 	int port = 80;
-	Server *server_data = malloc(sizeof(*server_data));
+	Server *server_data = calloc(sizeof(*server_data), 1);
 
 	cweb_t *server = cweb_new(80);
 	cweb_set_user_ptr(server, server_data);
