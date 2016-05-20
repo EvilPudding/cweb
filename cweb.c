@@ -716,6 +716,9 @@ static int cweb_http_protocol(
 				}
 				goto try_to_reuse;
 			}
+		case LWS_CALLBACK_PROTOCOL_DESTROY:
+			printf("Protocol being destroyed.\n");
+			break;
 		default:
 			/* printf("unhandled callback\n"); */
 			break;
@@ -818,15 +821,15 @@ int cweb_run(cweb_t *self)
 
 	lws_context_destroy(context);
 
-	free(self->events);
-	free(self->rooms);
+	if(self->events) free(self->events);
+	if(self->rooms) free(self->rooms);
 	int i;
 	for(i = 0; i < self->redirects_num; i++)
 	{
 		free(self->redirects[i].from);
 		free(self->redirects[i].to);
 	}
-	free(self->redirects);
+	if(self->redirects) free(self->redirects);
 
 	return 0;
 }
