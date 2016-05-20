@@ -7,7 +7,7 @@
 #include <jansson.h>
 #include "cemplate.h"
 #include "cweb.h"
-
+#include <fcntl.h> 
 
 typedef struct
 {
@@ -418,7 +418,75 @@ static cweb_redirect_t *cweb_get_redirect(const cweb_t *self,
 	return NULL;
 }
 
-static int lws_serve_http_string(struct lws *wsi, cweb_socket_t *socket, unsigned char *string,
+static int cweb_socket_serve_string_fragment(cweb_socket_t *socket)
+{
+	if (socket->httpipe[0] == 0)
+		goto try_to_reuse;
+
+	int sent = 0;
+	do {
+		char buffer[1000];
+		/* we'd like the send this much */
+		int n = sizeof(buffer) - LWS_PRE;
+
+		/* but if the peer told us he wants less, we can adapt */
+		int m = lws_get_peer_write_allowance(socket->wsi);
+
+		/* -1 means not using a protocol that has this info */
+		if (m == 0)
+		{
+			/* right now, peer can't handle anything */
+			goto later;
+		}
+
+		if (m != -1 && m < n)
+		{
+			/* he couldn't handle that much */
+			n = m;
+		}
+
+		n = read(socket->httpipe[0], buffer + LWS_PRE, n);
+		/* sent it all, close conn */
+		if (n <= 0)
+		{
+			goto penultimate;
+		}
+		m = lws_write(socket->wsi, buffer + LWS_PRE, n, LWS_WRITE_HTTP);
+		if (m < 0) {
+			lwsl_err("write failed\n");
+			/* write failed, close conn */
+			goto bail;
+		}
+		if (m) /* while still active, extend timeout */
+		{
+			lws_set_timeout(socket->wsi, PENDING_TIMEOUT_HTTP_CONTENT, 5);
+		}
+		sent += m;
+
+	} while (!lws_send_pipe_choked(socket->wsi) && (sent < 1024 * 1024));
+later:
+	lws_callback_on_writable(socket->wsi);
+	return 0;
+penultimate:
+	close(socket->httpipe[0]); socket->httpipe[0] = 0;
+	close(socket->httpipe[1]); socket->httpipe[1] = 0;
+	goto try_to_reuse;
+
+bail:
+	close(socket->httpipe[0]); socket->httpipe[0] = 0;
+	close(socket->httpipe[1]); socket->httpipe[1] = 0;
+	return -1;
+
+try_to_reuse:
+	if(lws_http_transaction_completed(socket->wsi))
+	{
+		return -1;
+	}
+
+
+}
+
+static int lws_serve_http_string(cweb_socket_t *socket, unsigned char *string,
 				    size_t stringlen, const char *content_type,
 				    const char *other_headers, int other_headers_len)
 {
@@ -428,43 +496,45 @@ static int lws_serve_http_string(struct lws *wsi, cweb_socket_t *socket, unsigne
 	unsigned char *start = p;
 	unsigned char *end = p + sizeof(buffer) - LWS_PRE;
 
-	int ret = 0;
+	int ret = -1;
 
-	if(lws_add_http_header_status(wsi, 200, &p, end))
-		return -1;
-	if(lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_SERVER,
+	if(lws_add_http_header_status(socket->wsi, 200, &p, end))
+		return 1;
+	if(lws_add_http_header_by_token(socket->wsi, WSI_TOKEN_HTTP_SERVER,
 					 (unsigned char *)"libwebsockets", 13,
 					 &p, end))
-		return -1;
-	if(lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_TYPE,
+		return 1;
+	if(lws_add_http_header_by_token(socket->wsi, WSI_TOKEN_HTTP_CONTENT_TYPE,
 					 (unsigned char *)content_type,
 					 strlen(content_type), &p, end))
-		return -1;
-	if(lws_add_http_header_content_length(wsi, stringlen, &p, end))
-		return -1;
+		return 1;
+	if(lws_add_http_header_content_length(socket->wsi, stringlen, &p, end))
+		return 1;
 
 	if(other_headers) {
 		if((end - p) < other_headers_len)
-			return -1;
+			return 1;
 		memcpy(p, other_headers, other_headers_len);
 		p += other_headers_len;
 	}
 
-	if(lws_finalize_http_header(wsi, &p, end))
-		return -1;
+	if(lws_finalize_http_header(socket->wsi, &p, end))
+		return 1;
 
-	ret = lws_write(wsi, start, p - start, LWS_WRITE_HTTP_HEADERS);
+	ret = lws_write(socket->wsi, start, p - start, LWS_WRITE_HTTP_HEADERS);
 	if(ret < 0)
 		return 1;
 
-	/* pipe(socket->httpipe); write(socket->httpipe[1], string, stringlen); */
-	memcpy(p + LWS_PRE, string, stringlen);
+	pipe(socket->httpipe); write(socket->httpipe[1], string, stringlen);
+	int flags = fcntl(socket->httpipe[0], F_GETFL, 0);
+	fcntl(socket->httpipe[0], F_SETFL, flags | O_NONBLOCK);
 
-	ret = lws_write(wsi, p + LWS_PRE, stringlen, LWS_WRITE_HTTP);
-	if(ret < 0)
-		return 1;
-	printf("kek\n");
-	/* lws_callback_on_writable(wsi); */
+	/* memcpy(p + LWS_PRE, string, stringlen); */
+
+	/* ret = lws_write(socket->wsi, p + LWS_PRE, stringlen, LWS_WRITE_HTTP); */
+	/* if(ret < 0) */
+		/* return 1; */
+	ret = cweb_socket_serve_string_fragment(socket);
 	return ret;
 }
 
@@ -508,6 +578,10 @@ static int cweb_http_protocol(
 	}
 	cweb_t *server = lws_context_user(lws_get_context(wsi));
 	cweb_socket_t *socket = cwebuser;
+	if(socket)
+	{
+		socket->wsi = wsi;
+	}
 
 	static char cwd[1024] = "";
 	if(cwd[0] == '\0')
@@ -543,59 +617,7 @@ static int cweb_http_protocol(
 
 		case LWS_CALLBACK_HTTP_WRITEABLE:
 			lwsl_info("LWS_CALLBACK_HTTP_WRITEABLE\n");
-
-			if (socket->httpipe[0] == 0)
-				goto try_to_reuse;
-
-			int sent = 0;
-			do {
-				char buffer[1000];
-				/* we'd like the send this much */
-				int n = sizeof(buffer) - LWS_PRE;
-
-				/* but if the peer told us he wants less, we can adapt */
-				int m = lws_get_peer_write_allowance(wsi);
-
-				/* -1 means not using a protocol that has this info */
-				if (m == 0)
-					/* right now, peer can't handle anything */
-					goto later;
-
-				if (m != -1 && m < n)
-					/* he couldn't handle that much */
-					n = m;
-
-				n = read(socket->httpipe[0], buffer + LWS_PRE, n);
-				/* sent it all, close conn */
-				if (n == 0)
-					goto penultimate;
-				m = lws_write(wsi, buffer + LWS_PRE, n, LWS_WRITE_HTTP);
-				if (m < 0) {
-					lwsl_err("write failed\n");
-					/* write failed, close conn */
-					goto bail;
-				}
-				if (m) /* while still active, extend timeout */
-					lws_set_timeout(wsi, PENDING_TIMEOUT_HTTP_CONTENT, 5);
-				sent += m;
-
-			} while (!lws_send_pipe_choked(wsi) && (sent < 1024 * 1024));
-later:
-			printf("LATER\n");
-			lws_callback_on_writable(wsi);
-			break;
-penultimate:
-			printf("PENUL\n");
-			close(socket->httpipe[0]); socket->httpipe[0] = 0;
-			close(socket->httpipe[1]); socket->httpipe[1] = 0;
-			goto try_to_reuse;
-
-bail:
-			printf("BAIL\n");
-			close(socket->httpipe[0]); socket->httpipe[0] = 0;
-			close(socket->httpipe[1]); socket->httpipe[1] = 0;
-			return -1;
-
+			return cweb_socket_serve_string_fragment(socket);
 		case LWS_CALLBACK_CLIENT_WRITEABLE:
 			printf("connection established\n");
 			break;
@@ -675,8 +697,12 @@ bail:
 						else
 						{
 							printf("sending string\n");
-							int n = lws_serve_http_string(wsi, socket, buffer, (size_t)len, ft->mime, NULL, 0);
+							int n = lws_serve_http_string(socket, buffer, (size_t)len, ft->mime, NULL, 0);
 							free(buffer);
+							if(n < 0 || ((n > 0) && lws_http_transaction_completed(wsi)))
+							{
+								return -1;
+							}
 						}
 					}
 					else
@@ -784,9 +810,10 @@ int cweb_run(cweb_t *self)
 		return -1;
 	}
 
-	while(1)
+	int n;
+	while(n >= 0)
 	{
-		lws_service(context, 50);
+		n = lws_service(context, 50);
 	}
 
 	lws_context_destroy(context);
