@@ -73,10 +73,15 @@ window.onload = function()
 		<div id="online" style="position:fixed;right:0;width:100px;"></div>
 		<div class="container">
 			<h1>CWeb</h1>
-			<h2>%*/
-	/* char *name = *(char**)cweb_socket_get_user_ptr(socket); */
-	/* fprintf(fp, "Welcome %s\n", name); */
-			/*%</h2>
+			<ul>%*/
+				int i;
+				for(i = 0; i < 10; i++)
+				{
+					fprintf(fp, "<li>number %d</li>\n", i);
+				}
+				char *name = *(char**)cweb_socket_get_user_ptr(socket);
+				fprintf(fp, "Welcome %s\n", name);
+			/*%</ul>
 			<form>
 				<input id='inp' type="text" />
 				<button id='but'>Send</button>

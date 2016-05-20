@@ -426,7 +426,7 @@ static int cweb_socket_serve_string_fragment(cweb_socket_t *socket)
 
 	int sent = 0;
 	do {
-		char buffer[4096 + LWS_PRE];
+		char buffer[1000 + LWS_PRE];
 		/* we'd like the send this much */
 		int n = sizeof(buffer) - LWS_PRE;
 
@@ -461,7 +461,7 @@ static int cweb_socket_serve_string_fragment(cweb_socket_t *socket)
 		}
 		if (m) /* while still active, extend timeout */
 		{
-			lws_set_timeout(socket->wsi, PENDING_TIMEOUT_HTTP_CONTENT, 5);
+			/* lws_set_timeout(socket->wsi, PENDING_TIMEOUT_HTTP_CONTENT, 5); */
 		}
 		sent += m;
 
@@ -472,6 +472,7 @@ later:
 penultimate:
 	close(socket->http_read); socket->http_read = 0;
 	close(socket->http_write); socket->http_write = 0;
+	return -1;
 	goto try_to_reuse;
 
 bail:
@@ -489,7 +490,7 @@ try_to_reuse:
 
 }
 
-static int lws_serve_http_fd(cweb_socket_t *socket, size_t len,
+static int socket_serve_http_fd(cweb_socket_t *socket, size_t len,
 				    const char *content_type,
 				    const char *other_headers, int other_headers_len)
 {
@@ -552,7 +553,7 @@ static int socket_serve_http_file(cweb_socket_t *socket,
 
 	if(n == -1) return -1;
 
-	return lws_serve_http_fd(socket, n, content_type, other_headers,
+	return socket_serve_http_fd(socket, n, content_type, other_headers,
 			other_headers_len);
 }
 
@@ -574,7 +575,7 @@ static int socket_serve_http_string(cweb_socket_t *socket, unsigned char *string
 
 	int n = write(socket->http_write, string, stringlen);
 
-	return lws_serve_http_fd(socket, n, content_type, other_headers,
+	return socket_serve_http_fd(socket, n, content_type, other_headers,
 			other_headers_len);
 }
 
@@ -743,7 +744,9 @@ static int cweb_http_protocol(
 					}
 					else
 					{
-						int n = socket_serve_http_file(socket, resource_path,
+						/* int n = socket_serve_http_file(socket, resource_path, */
+						/* 		ft->mime, NULL, 0); */
+						int n = lws_serve_http_file(wsi, resource_path,
 								ft->mime, NULL, 0);
 						return n;
 					}
